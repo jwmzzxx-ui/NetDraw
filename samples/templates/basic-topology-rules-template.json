@@ -1,0 +1,16 @@
+{
+  "layout": {
+    "layerOrder": ["part", "breakout", "interface", "control", "switch", "ipc", "route"],
+    "moduleOrder": ["MODULE-A"],
+    "moduleGap": 700,
+    "dx": 260,
+    "dy": 32,
+    "cabinetGap": 900,
+    "slotGap": 120,
+    "boardGap": 28,
+    "projectionDefaults": {
+      "mode": "layer",
+      "minVisibleLayer": "breakout"
+    }
+  }
+}

@@ -63,10 +63,14 @@ export interface ComponentRow {
   nodeId: string;
   componentType: string;
   layer?: LayerType;
+  module?: string;
   cabinet?: string;
   slot?: string;
   order?: string;
   displayName?: string;
+  templateId?: string;
+  templateVariant?: string;
+  templateParams?: string;
   remarks?: string;
 }
 
@@ -260,24 +264,79 @@ export interface Position {
   y: number;
 }
 
+export type TemplateShape = "round-rectangle" | "rectangle" | "hexagon" | "ellipse";
+export type TemplateAnchorSide = "left" | "right" | "top" | "bottom" | "center";
+
+export interface TemplateAnchor {
+  id: string;
+  label?: string;
+  side: TemplateAnchorSide;
+  offset: number;
+  x?: number;
+  y?: number;
+}
+
+export interface DisplayTemplate {
+  id: string;
+  label: string;
+  width: number;
+  height: number;
+  shape: TemplateShape;
+  fill: string;
+  stroke: string;
+  strokeWidth?: number;
+  titleFill?: string;
+  titleColor?: string;
+  titleHeight?: number;
+  labelPosition?: "center" | "title" | "below";
+  anchors?: TemplateAnchor[];
+}
+
+export interface DisplayTemplateOverride {
+  width?: number;
+  height?: number;
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+  titleFill?: string;
+  titleColor?: string;
+  titleHeight?: number;
+  label?: string;
+  anchors?: TemplateAnchor[];
+}
+
+export interface DisplayRules {
+  templates: Record<string, DisplayTemplate>;
+  nodeTemplates?: Record<string, string>;
+  kindTemplates?: Partial<Record<GraphNode["type"], string>>;
+  templateOverrides?: Record<string, DisplayTemplateOverride>;
+}
+
 export interface LayoutRules {
   layerOrder: string[];
   dx: number;
   dy: number;
   cabinetGap: number;
+  moduleGap?: number;
   slotGap: number;
   boardGap: number;
+  moduleOrder?: string[];
   deviceOrder?: string[];
   boardOrder?: string[];
   nodeLayers?: Record<string, string>;
   overridePositions?: Record<string, Position>;
   edgeBendPoints?: Record<string, Position[]>;
+  projectionDefaults?: {
+    mode: "module" | "layer" | "detail";
+    minVisibleLayer: string;
+  };
 }
 
 export interface PositionedNode extends GraphNode {
   position: Position;
   layout: {
     layer: string;
+    module: string;
     cabinet: string;
     slot: string;
     device: string;
@@ -300,4 +359,5 @@ export interface PositionedGraph {
   edges: GraphEdge[];
   warnings: LayoutWarning[];
   rules: LayoutRules;
+  displayRules?: DisplayRules;
 }

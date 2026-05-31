@@ -1,11 +1,15 @@
 import { useMemo, useState } from "react";
 import type { PositionedGraph } from "../../src/types.js";
-import { getAvailableNetTypes, type ViewMode } from "./graphAdapter.js";
+import { getAvailableModules, getAvailableNetTypes, type ProjectionMode, type ViewMode } from "./graphAdapter.js";
 
 export function useGraphFilters(graph: PositionedGraph) {
   const availableNetTypes = useMemo(() => getAvailableNetTypes(graph), [graph]);
+  const availableModules = useMemo(() => getAvailableModules(graph), [graph]);
   const [activeNetTypes, setActiveNetTypes] = useState<Set<string>>(() => new Set(availableNetTypes));
   const [mode, setMode] = useState<ViewMode>("overview");
+  const [projection, setProjection] = useState<ProjectionMode>(graph.rules.projectionDefaults?.mode ?? "layer");
+  const [activeModule, setActiveModule] = useState<string | null>(null);
+  const [minVisibleLayer, setMinVisibleLayer] = useState(graph.rules.projectionDefaults?.minVisibleLayer ?? "breakout");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
 
@@ -23,9 +27,26 @@ export function useGraphFilters(graph: PositionedGraph) {
 
   return {
     availableNetTypes,
+    availableModules,
     activeNetTypes,
     mode,
-    setMode,
+    setMode: (nextMode: ViewMode) => {
+      setMode(nextMode);
+      if (nextMode === "detail") {
+        setProjection("detail");
+      } else if (projection === "detail") {
+        setProjection("layer");
+      }
+    },
+    projection,
+    setProjection: (nextProjection: ProjectionMode) => {
+      setProjection(nextProjection);
+      setMode(nextProjection === "detail" ? "detail" : "overview");
+    },
+    activeModule,
+    setActiveModule,
+    minVisibleLayer,
+    setMinVisibleLayer,
     zoom,
     setZoom,
     highlightedId,

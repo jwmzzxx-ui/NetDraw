@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { createPresetLayout, explainPosition } from "../src/layout.js";
-import type { CanonicalGraph, LayoutRules } from "../src/types.js";
+import { DEFAULT_DISPLAY_RULES } from "../src/displayRules.js";
+import type { CanonicalGraph, DisplayRules, LayoutRules } from "../src/types.js";
 
 const rules: LayoutRules = {
   layerOrder: ["part", "control", "switch", "ipc"],
@@ -9,8 +10,10 @@ const rules: LayoutRules = {
   cabinetGap: 1000,
   slotGap: 100,
   boardGap: 10,
+  moduleGap: 600,
   deviceOrder: ["PART_A", "CTRL_A", "SW_1"],
-  boardOrder: ["BRK_A", "CTRL_BOARD", "LINE_CARD"]
+  boardOrder: ["BRK_A", "CTRL_BOARD", "LINE_CARD"],
+  moduleOrder: ["MODULE-A", "MODULE-B"]
 };
 
 describe("createPresetLayout", () => {
@@ -80,6 +83,32 @@ describe("createPresetLayout", () => {
     expect(explainPosition(positioned, "device:CTRL_A")).toContain("override");
   });
 
+  test("groups y coordinates by module before cabinet and device order", () => {
+    const positioned = createPresetLayout(
+      graph([
+        {
+          id: "device:PART_A",
+          type: "device",
+          displayName: "PART_A",
+          layer: "part",
+          metadata: { module: "MODULE-B" }
+        },
+        {
+          id: "device:CTRL_A",
+          type: "device",
+          displayName: "CTRL_A",
+          layer: "control",
+          metadata: { module: "MODULE-A" }
+        }
+      ]),
+      rules
+    );
+
+    expect(positionOf(positioned, "device:CTRL_A").y).toBe(20);
+    expect(positionOf(positioned, "device:PART_A").y).toBe(600);
+    expect(positioned.nodes.find((node) => node.id === "device:PART_A")?.layout.module).toBe("MODULE-B");
+  });
+
   test("offsets overlapping final coordinates and records a warning", () => {
     const positioned = createPresetLayout(
       graph([
@@ -103,6 +132,56 @@ describe("createPresetLayout", () => {
         nodeId: "device:B"
       })
     ]);
+  });
+
+  test("places child ports on parent template anchors unless manually overridden", () => {
+    const displayRules: DisplayRules = {
+      ...DEFAULT_DISPLAY_RULES,
+      nodeTemplates: { "board:PART_A/BRK_A": "breakout-panel" }
+    };
+    const positioned = createPresetLayout(
+      graph([
+        { id: "board:PART_A/BRK_A", type: "board", displayName: "BRK_A", layer: "part" },
+        {
+          id: "port:PART_A/BRK_A/PWR_IN",
+          type: "port",
+          parent: "board:PART_A/BRK_A",
+          displayName: "PWR_IN",
+          layer: "part",
+          metadata: { templateParams: "{\"anchorId\":\"left-in\"}" }
+        },
+        {
+          id: "port:PART_A/BRK_A/OUT",
+          type: "port",
+          parent: "board:PART_A/BRK_A",
+          displayName: "OUT",
+          layer: "part",
+          metadata: { templateParams: "{\"anchorId\":\"right-upper\"}" }
+        }
+      ]),
+      rules,
+      displayRules
+    );
+
+    expect(positionOf(positioned, "port:PART_A/BRK_A/PWR_IN")).toEqual({ x: -75, y: -40 });
+    expect(positionOf(positioned, "port:PART_A/BRK_A/OUT")).toEqual({ x: 75, y: -40 });
+
+    const overridden = createPresetLayout(
+      graph([
+        { id: "board:PART_A/BRK_A", type: "board", displayName: "BRK_A", layer: "part" },
+        {
+          id: "port:PART_A/BRK_A/PWR_IN",
+          type: "port",
+          parent: "board:PART_A/BRK_A",
+          displayName: "PWR_IN",
+          layer: "part",
+          metadata: { templateParams: "{\"anchorId\":\"left-in\"}" }
+        }
+      ]),
+      { ...rules, overridePositions: { "port:PART_A/BRK_A/PWR_IN": { x: 333, y: 444 } } },
+      displayRules
+    );
+    expect(positionOf(overridden, "port:PART_A/BRK_A/PWR_IN")).toEqual({ x: 333, y: 444 });
   });
 });
 

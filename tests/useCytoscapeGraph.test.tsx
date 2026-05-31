@@ -86,6 +86,10 @@ class FakeCore {
     return undefined;
   }
 
+  style() {
+    return this;
+  }
+
   layout(options: { fit?: boolean; run?: () => void }) {
     return {
       run: () => {
@@ -127,14 +131,14 @@ function fixtureGraph(): PositionedGraph {
         type: "port",
         displayName: "P1",
         position: { x: 0, y: 0 },
-        layout: { layer: "part", cabinet: "", slot: "", device: "A", board: "BOARD", order: 0, reason: "test" }
+        layout: { layer: "part", module: "", cabinet: "", slot: "", device: "A", board: "BOARD", order: 0, reason: "test" }
       },
       {
         id: "port:B/BOARD/P2",
         type: "port",
         displayName: "P2",
         position: { x: 200, y: 0 },
-        layout: { layer: "control", cabinet: "", slot: "", device: "B", board: "BOARD", order: 0, reason: "test" }
+        layout: { layer: "control", module: "", cabinet: "", slot: "", device: "B", board: "BOARD", order: 0, reason: "test" }
       }
     ],
     edges: [

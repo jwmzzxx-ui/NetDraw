@@ -4,7 +4,7 @@ import type { PositionedGraph } from "../src/types.js";
 
 const graph: PositionedGraph = {
   rules: {
-    layerOrder: ["part", "control", "route"],
+    layerOrder: ["part", "breakout", "interface", "control", "switch", "ipc", "route"],
     dx: 200,
     dy: 20,
     cabinetGap: 1000,
@@ -18,21 +18,21 @@ const graph: PositionedGraph = {
       type: "port",
       displayName: "P1",
       position: { x: 0, y: 0 },
-      layout: { layer: "part", cabinet: "", slot: "", device: "A", board: "BOARD", order: 0, reason: "test" }
+      layout: { layer: "part", module: "MODULE-A", cabinet: "", slot: "", device: "A", board: "BOARD", order: 0, reason: "test" }
     },
     {
       id: "port:B/BOARD/P2",
       type: "port",
       displayName: "P2",
       position: { x: 200, y: 0 },
-      layout: { layer: "control", cabinet: "", slot: "", device: "B", board: "BOARD", order: 0, reason: "test" }
+      layout: { layer: "control", module: "MODULE-B", cabinet: "", slot: "", device: "B", board: "BOARD", order: 0, reason: "test" }
     },
     {
       id: "route:TRAY_1",
       type: "route-node",
       displayName: "TRAY_1",
       position: { x: 400, y: 0 },
-      layout: { layer: "route", cabinet: "", slot: "", device: "TRAY_1", board: "", order: 0, reason: "test" }
+      layout: { layer: "route", module: "", cabinet: "", slot: "", device: "TRAY_1", board: "", order: 0, reason: "test" }
     }
   ],
   edges: [
@@ -108,13 +108,17 @@ describe("web graph adapter", () => {
       netTypes: new Set(["COMM"]),
       mode: "detail",
       highlightedId: "cable:C-001",
+      projection: "detail",
+      activeModule: null,
+      minVisibleLayer: "breakout",
       zoom: 1
     });
 
     expect(elements.nodes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          data: expect.objectContaining({ id: "port:A/BOARD/P1", label: "P1", kind: "port" }),
+          data: expect.objectContaining({ id: "port:A/BOARD/P1", label: "P1", kind: "port", templateId: "connector-port", templateWidth: 58 }),
+          classes: expect.stringContaining("has-template"),
           position: { x: 0, y: 0 }
         })
       ])
@@ -128,12 +132,70 @@ describe("web graph adapter", () => {
     );
   });
 
-  test("filters route segments out of overview mode", () => {
+  test("uses layer projection for overview mode and filters route segments", () => {
     const overview = filterGraphForView(graph, { netTypes: new Set(["COMM"]), mode: "overview", highlightedId: null, zoom: 0.5 });
     const detail = filterGraphForView(graph, { netTypes: new Set(["COMM"]), mode: "detail", highlightedId: null, zoom: 1 });
 
-    expect(overview.edges.map((edge) => edge.id)).toEqual(["summary:port:A/BOARD/P1->port:B/BOARD/P2:COMM"]);
+    expect(overview.edges.map((edge) => edge.id)).toEqual(["summary:module:MODULE-A->layer:MODULE-B:control:B/BOARD:COMM"]);
     expect(detail.edges.map((edge) => edge.id)).toEqual(["cable:C-001", "route-segment:C-001:0", "cable:C-002"]);
+  });
+
+  test("builds module projection as collapsed module nodes and summary edges", () => {
+    const projected = filterGraphForView(graph, {
+      netTypes: new Set(["COMM"]),
+      mode: "overview",
+      projection: "module",
+      activeModule: null,
+      minVisibleLayer: "breakout",
+      highlightedId: null,
+      zoom: 0.5
+    });
+
+    expect(projected.nodes.map((node) => node.id).sort()).toEqual(["module:MODULE-A", "module:MODULE-B"]);
+    expect(projected.edges).toEqual([
+      expect.objectContaining({
+        id: "summary:module:MODULE-A->module:MODULE-B:COMM",
+        source: "module:MODULE-A",
+        target: "module:MODULE-B",
+        cableId: "2 cables"
+      })
+    ]);
+  });
+
+  test("builds layer projection with module placeholders for hidden part endpoints", () => {
+    const projected = filterGraphForView(graph, {
+      netTypes: new Set(["COMM"]),
+      mode: "overview",
+      projection: "layer",
+      activeModule: null,
+      minVisibleLayer: "breakout",
+      highlightedId: null,
+      zoom: 0.5
+    });
+
+    expect(projected.nodes.map((node) => node.id).sort()).toEqual(["layer:MODULE-B:control:B/BOARD", "module:MODULE-A"]);
+    expect(projected.edges[0]).toEqual(
+      expect.objectContaining({
+        source: "module:MODULE-A",
+        target: "layer:MODULE-B:control:B/BOARD",
+        cableId: "2 cables"
+      })
+    );
+  });
+
+  test("filters detail projection to a selected module subgraph and cross-module cables", () => {
+    const projected = filterGraphForView(graph, {
+      netTypes: new Set(["COMM"]),
+      mode: "detail",
+      projection: "detail",
+      activeModule: "MODULE-A",
+      minVisibleLayer: "breakout",
+      highlightedId: null,
+      zoom: 1
+    });
+
+    expect(projected.nodes.map((node) => node.id).sort()).toEqual(["port:A/BOARD/P1", "port:B/BOARD/P2"]);
+    expect(projected.edges.map((edge) => edge.id).sort()).toEqual(["cable:C-001", "cable:C-002"]);
   });
 
   test("calculates graph stats for the sidebar", () => {
@@ -146,7 +208,15 @@ describe("web graph adapter", () => {
   });
 
   test("hides port labels in overview and restores them above the zoom threshold", () => {
-    const overview = buildCytoscapeElements(graph, { netTypes: new Set(["COMM"]), mode: "overview", highlightedId: null, zoom: 0.5 });
+    const overview = buildCytoscapeElements(graph, {
+      netTypes: new Set(["COMM"]),
+      mode: "overview",
+      projection: "detail",
+      activeModule: null,
+      minVisibleLayer: "breakout",
+      highlightedId: null,
+      zoom: 0.5
+    });
     const detailZoomed = buildCytoscapeElements(graph, { netTypes: new Set(["COMM"]), mode: "detail", highlightedId: null, zoom: 1.2 });
 
     const overviewPort = overview.nodes.find((node) => node.data.id === "port:A/BOARD/P1");
@@ -188,7 +258,7 @@ describe("web graph adapter", () => {
           type: "device",
           displayName: "A",
           position: { x: -100, y: 0 },
-          layout: { layer: "part", cabinet: "", slot: "", device: "A", board: "", order: 0, reason: "test" }
+          layout: { layer: "part", module: "MODULE-A", cabinet: "", slot: "", device: "A", board: "", order: 0, reason: "test" }
         },
         {
           id: "board:A/BOARD",
@@ -196,7 +266,7 @@ describe("web graph adapter", () => {
           parent: "device:A",
           displayName: "BOARD",
           position: { x: -50, y: 0 },
-          layout: { layer: "part", cabinet: "", slot: "", device: "A", board: "BOARD", order: 0, reason: "test" }
+          layout: { layer: "part", module: "MODULE-A", cabinet: "", slot: "", device: "A", board: "BOARD", order: 0, reason: "test" }
         },
         {
           ...graph.nodes[0],

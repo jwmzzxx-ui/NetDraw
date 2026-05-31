@@ -1,12 +1,14 @@
 import { readFile } from "node:fs/promises";
+import { mergeDisplayRules } from "./displayRules.js";
 import { DEFAULT_LAYOUT_RULES } from "./layout.js";
 import { DEFAULT_STYLE_RULES, type StyleRules } from "./styleRules.js";
-import type { ExportConfig, LayoutRules } from "./types.js";
+import type { DisplayRules, ExportConfig, LayoutRules } from "./types.js";
 import type { NormalizationAliases } from "./normalizer.js";
 import type { ResolveCableRouteOptions } from "./routing.js";
 
 export interface ProjectRulesInput {
   layout?: Partial<LayoutRules>;
+  display?: Partial<DisplayRules>;
   style?: PartialStyleRules;
   export?: ExportConfig;
   normalization?: {
@@ -17,6 +19,7 @@ export interface ProjectRulesInput {
 
 export interface ProjectRules {
   layout: LayoutRules;
+  display: DisplayRules;
   style: StyleRules;
   export: ExportConfig;
   normalization: {
@@ -57,6 +60,7 @@ export function mergeProjectRules(input: ProjectRulesInput = {}): ProjectRules {
         ...input.layout?.nodeLayers
       }
     },
+    display: mergeDisplayRules(input.display),
     style: mergeStyleRules(input.style),
     export: {
       ...input.export

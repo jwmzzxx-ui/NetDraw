@@ -170,6 +170,9 @@ npm run server:dev
 - [samples/templates/routes-template.csv](/F:/NetDraw/samples/templates/routes-template.csv)
 - [samples/templates/components-template.csv](/F:/NetDraw/samples/templates/components-template.csv)
 - [samples/templates/rules-template.json](/F:/NetDraw/samples/templates/rules-template.json)
+- [samples/templates/basic-topology-interface-template.csv](/F:/NetDraw/samples/templates/basic-topology-interface-template.csv)
+- [samples/templates/basic-topology-components-template.csv](/F:/NetDraw/samples/templates/basic-topology-components-template.csv)
+- [samples/templates/basic-topology-rules-template.json](/F:/NetDraw/samples/templates/basic-topology-rules-template.json)
 - [samples/templates/README.md](/F:/NetDraw/samples/templates/README.md)
 
 ### 5.1 接口表 `interface-template.csv`
@@ -239,6 +242,7 @@ npm run server:dev
 可选列：
 
 - `layer`
+- `module`
 - `cabinet`
 - `slot`
 - `order`
@@ -261,6 +265,8 @@ npm run server:dev
 - `ipc`
 - `route`
 
+`module` 用来把一张大图拆成多个模块子图，也用于网页版的模块级、层级级拓扑提炼视图。
+
 ### 5.4 规则文件 `rules-template.json`
 
 规则文件用于控制：
@@ -268,6 +274,8 @@ npm run server:dev
 - 归一化别名
 - 路由策略
 - 布局间距
+- 模块分区顺序
+- 默认拓扑投影粒度
 - 手工覆盖位置
 - 边折点
 - 样式颜色和线型

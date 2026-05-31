@@ -20,11 +20,14 @@ describe("rules config", () => {
       rulesPath,
       JSON.stringify(
         {
-          layout: {
-            dx: 320,
-            overridePositions: {
-              "port:PART_A/CTRL_A/LAN1": { x: 1234, y: 567 }
-            },
+        layout: {
+          dx: 320,
+          moduleGap: 700,
+          moduleOrder: ["MODULE-A", "MODULE-B"],
+          projectionDefaults: { mode: "layer", minVisibleLayer: "breakout" },
+          overridePositions: {
+            "port:PART_A/CTRL_A/LAN1": { x: 1234, y: 567 }
+          },
             edgeBendPoints: {
               "cable:CAB-001": [{ x: 300, y: 420 }]
             }
@@ -32,6 +35,14 @@ describe("rules config", () => {
           style: {
             netTypes: {
               COMM: { color: "#0055ff", lineStyle: "dashed", width: 4 }
+            }
+          },
+          display: {
+            nodeTemplates: {
+              "device:PART_A": "part-sensor"
+            },
+            templateOverrides: {
+              "device:PART_A": { width: 210, fill: "#ffeecc" }
             }
           },
           export: {
@@ -50,12 +61,18 @@ describe("rules config", () => {
     const merged = mergeProjectRules(await loadProjectRules(rulesPath));
 
     expect(merged.layout.dx).toBe(320);
+    expect(merged.layout.moduleGap).toBe(700);
+    expect(merged.layout.moduleOrder).toEqual(["MODULE-A", "MODULE-B"]);
+    expect(merged.layout.projectionDefaults).toEqual({ mode: "layer", minVisibleLayer: "breakout" });
     expect(merged.layout.overridePositions?.["port:PART_A/CTRL_A/LAN1"]).toEqual({ x: 1234, y: 567 });
     expect(merged.layout.edgeBendPoints?.["cable:CAB-001"]).toEqual([{ x: 300, y: 420 }]);
     expect(merged.style.netTypes.COMM).toEqual(
       expect.objectContaining({ label: "COMM", color: "#0055ff", lineStyle: "dashed", width: 4 })
     );
     expect(merged.style.netTypes.AC.color).toBe("#d9480f");
+    expect(merged.display.templates["board-panel"].label).toBe("Board panel");
+    expect(merged.display.nodeTemplates?.["device:PART_A"]).toBe("part-sensor");
+    expect(merged.display.templateOverrides?.["device:PART_A"]).toEqual(expect.objectContaining({ width: 210, fill: "#ffeecc" }));
     expect(merged.export.fileBaseName).toBe("cables-custom");
     expect(merged.routing.preferAStar).toBe(true);
 

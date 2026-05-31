@@ -1,56 +1,61 @@
 import type {
   CanonicalGraph,
+  DisplayRules,
   GraphNode,
   LayoutRules,
   LayoutWarning,
   PositionedGraph,
   PositionedNode,
-  Position
+  Position,
+  TemplateAnchor
 } from "./types.js";
+import { DEFAULT_DISPLAY_RULES, getTemplateAnchorPosition, resolveDisplayTemplate } from "./displayRules.js";
 
 export const DEFAULT_LAYOUT_RULES: LayoutRules = {
   layerOrder: ["part", "breakout", "interface", "control", "switch", "ipc", "route"],
   dx: 240,
   dy: 28,
   cabinetGap: 900,
+  moduleGap: 700,
   slotGap: 120,
-  boardGap: 24
+  boardGap: 24,
+  projectionDefaults: { mode: "layer", minVisibleLayer: "breakout" }
 };
 
 interface PlacementInput {
   node: GraphNode;
   layer: string;
+  module: string;
   cabinet: string;
   slot: string;
   device: string;
   board: string;
   order: number;
   cabinetRank: number;
+  moduleRank: number;
   slotRank: number;
   boardRank: number;
   deviceRank: number;
 }
 
-export function createPresetLayout(graph: CanonicalGraph, rules: LayoutRules = DEFAULT_LAYOUT_RULES): PositionedGraph {
+export function createPresetLayout(
+  graph: CanonicalGraph,
+  rules: LayoutRules = DEFAULT_LAYOUT_RULES,
+  displayRules: DisplayRules = DEFAULT_DISPLAY_RULES
+): PositionedGraph {
   const rankContext = buildRankContext(graph.nodes, rules);
   const placements = graph.nodes.map((node) => buildPlacementInput(node, rules, rankContext));
   const sortedPlacements = placements
     .slice()
     .sort((a, b) => comparePlacement(a, b, rules));
+  const placementById = new Map(placements.map((placement) => [placement.node.id, placement]));
+  const basePositions = new Map(placements.map((placement) => [placement.node.id, basePositionFor(placement, rules)]));
   const occupied = new Map<string, string>();
   const warnings: LayoutWarning[] = [];
 
   const nodes = placements.map<PositionedNode>((placement) => {
     const override = rules.overridePositions?.[placement.node.id];
-    const basePosition = override ?? {
-      x: layerToX(placement.layer, rules),
-      y:
-        placement.cabinetRank * rules.cabinetGap +
-        placement.slotRank * rules.slotGap +
-        placement.deviceRank * rules.dy +
-        placement.boardRank * rules.boardGap +
-        placement.order * rules.dy
-    };
+    const basePosition = override ?? anchoredPortPosition(placement, placementById, basePositions, displayRules) ?? basePositions.get(placement.node.id)!;
     const { position, warning } = reservePosition(placement.node.id, basePosition, occupied);
     if (warning) {
       warnings.push(warning);
@@ -61,6 +66,7 @@ export function createPresetLayout(graph: CanonicalGraph, rules: LayoutRules = D
       position,
       layout: {
         layer: placement.layer,
+        module: placement.module,
         cabinet: placement.cabinet,
         slot: placement.slot,
         device: placement.device,
@@ -68,7 +74,7 @@ export function createPresetLayout(graph: CanonicalGraph, rules: LayoutRules = D
         order: placement.order,
         reason: override
           ? `override position applied for ${placement.node.id}`
-          : `layer=${placement.layer}; cabinet=${placement.cabinet}; slot=${placement.slot}; device=${placement.device}; board=${placement.board}; order=${placement.order}`
+          : `module=${placement.module}; layer=${placement.layer}; cabinet=${placement.cabinet}; slot=${placement.slot}; device=${placement.device}; board=${placement.board}; order=${placement.order}`
       }
     };
   });
@@ -77,7 +83,8 @@ export function createPresetLayout(graph: CanonicalGraph, rules: LayoutRules = D
     nodes,
     edges: graph.edges,
     warnings,
-    rules
+    rules,
+    displayRules
   };
 }
 
@@ -92,6 +99,7 @@ export function explainPosition(positionedGraph: PositionedGraph, nodeId: string
 
 function buildPlacementInput(node: GraphNode, rules: LayoutRules, rankContext: RankContext): PlacementInput {
   const layer = resolveLayer(node, rules);
+  const module = node.metadata?.module ?? "";
   const cabinet = node.metadata?.cabinet ?? "";
   const slot = node.metadata?.slot ?? "";
   const device = resolveDeviceName(node);
@@ -101,11 +109,13 @@ function buildPlacementInput(node: GraphNode, rules: LayoutRules, rankContext: R
   return {
     node,
     layer,
+    module,
     cabinet,
     slot,
     device,
     board,
     order: Number.isFinite(order) ? order : 0,
+    moduleRank: orderedRank(module, rules.moduleOrder, rankContext.moduleRanks),
     cabinetRank: rankContext.cabinetRanks.get(cabinet) ?? 0,
     slotRank: rankContext.slotRanks.get(slot) ?? 0,
     deviceRank: orderedRank(device, rules.deviceOrder, rankContext.deviceRanks),
@@ -116,6 +126,7 @@ function buildPlacementInput(node: GraphNode, rules: LayoutRules, rankContext: R
 function comparePlacement(a: PlacementInput, b: PlacementInput, rules: LayoutRules): number {
   return (
     layerRank(a.layer, rules) - layerRank(b.layer, rules) ||
+    a.moduleRank - b.moduleRank ||
     a.cabinetRank - b.cabinetRank ||
     a.slotRank - b.slotRank ||
     a.deviceRank - b.deviceRank ||
@@ -123,6 +134,63 @@ function comparePlacement(a: PlacementInput, b: PlacementInput, rules: LayoutRul
     a.order - b.order ||
     a.node.id.localeCompare(b.node.id)
   );
+}
+
+function basePositionFor(placement: PlacementInput, rules: LayoutRules): Position {
+  return {
+    x: layerToX(placement.layer, rules),
+    y:
+      placement.moduleRank * (rules.moduleGap ?? DEFAULT_LAYOUT_RULES.moduleGap ?? 0) +
+      placement.cabinetRank * rules.cabinetGap +
+      placement.slotRank * rules.slotGap +
+      placement.deviceRank * rules.dy +
+      placement.boardRank * rules.boardGap +
+      placement.order * rules.dy
+  };
+}
+
+function anchoredPortPosition(
+  placement: PlacementInput,
+  placementById: Map<string, PlacementInput>,
+  basePositions: Map<string, Position>,
+  displayRules: DisplayRules
+): Position | undefined {
+  if (placement.node.type !== "port" || !placement.node.parent) {
+    return undefined;
+  }
+  const parentPlacement = placementById.get(placement.node.parent);
+  const parentPosition = basePositions.get(placement.node.parent);
+  if (!parentPlacement || !parentPosition) {
+    return undefined;
+  }
+  const parentTemplate = resolveDisplayTemplate(parentPlacement.node, displayRules);
+  const anchor = matchAnchor(placement.node, parentTemplate.anchors ?? []);
+  return anchor ? getTemplateAnchorPosition(parentTemplate, parentPosition, anchor) : undefined;
+}
+
+function matchAnchor(node: GraphNode, anchors: TemplateAnchor[]): TemplateAnchor | undefined {
+  const params = parseTemplateParams(node.metadata?.templateParams);
+  const requested = params.anchorId ?? params.anchor ?? node.metadata?.templateVariant;
+  if (requested) {
+    const direct = anchors.find((anchor) => anchor.id === requested || anchor.label === requested);
+    if (direct) {
+      return direct;
+    }
+  }
+  const haystack = `${node.id} ${node.displayName}`.toLowerCase();
+  return anchors.find((anchor) => haystack.includes(anchor.id.toLowerCase()) || (anchor.label && haystack.includes(anchor.label.toLowerCase())));
+}
+
+function parseTemplateParams(value: string | undefined): Record<string, string> {
+  if (!value) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(parsed).map(([key, entry]) => [key, String(entry)]));
+  } catch {
+    return {};
+  }
 }
 
 function resolveLayer(node: GraphNode, rules: LayoutRules): string {
@@ -153,6 +221,7 @@ function resolveBoardName(node: GraphNode): string {
 }
 
 interface RankContext {
+  moduleRanks: Map<string, number>;
   cabinetRanks: Map<string, number>;
   slotRanks: Map<string, number>;
   deviceRanks: Map<string, number>;
@@ -160,12 +229,14 @@ interface RankContext {
 }
 
 function buildRankContext(nodes: GraphNode[], rules: LayoutRules): RankContext {
+  const modules = new Set<string>([""]);
   const cabinets = new Set<string>([""]);
   const slots = new Set<string>([""]);
   const devices = new Set<string>();
   const boards = new Set<string>([""]);
 
   for (const node of nodes) {
+    modules.add(node.metadata?.module ?? "");
     cabinets.add(node.metadata?.cabinet ?? "");
     slots.add(node.metadata?.slot ?? "");
     devices.add(resolveDeviceName(node));
@@ -173,6 +244,7 @@ function buildRankContext(nodes: GraphNode[], rules: LayoutRules): RankContext {
   }
 
   return {
+    moduleRanks: sortedRankMap(modules, rules.moduleOrder),
     cabinetRanks: sortedRankMap(cabinets),
     slotRanks: sortedRankMap(slots),
     deviceRanks: sortedRankMap(devices, rules.deviceOrder),

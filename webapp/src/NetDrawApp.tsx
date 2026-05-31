@@ -198,6 +198,9 @@ export function NetDrawApp() {
         { fileName: "routes-template.csv", url: "/api/templates/routes-template.csv" },
         { fileName: "components-template.csv", url: "/api/templates/components-template.csv" },
         { fileName: "rules-template.json", url: "/api/templates/rules-template.json" },
+        { fileName: "basic-topology-interface-template.csv", url: "/api/templates/basic-topology-interface-template.csv" },
+        { fileName: "basic-topology-components-template.csv", url: "/api/templates/basic-topology-components-template.csv" },
+        { fileName: "basic-topology-rules-template.json", url: "/api/templates/basic-topology-rules-template.json" },
         { fileName: "README.md", url: "/api/templates/README.md" }
       ]}
     />

@@ -14,10 +14,14 @@ const componentFieldAliases: Record<keyof ComponentRow, string[]> = {
   nodeId: ["node_id", "nodeId", "component_id", "componentId", "id"],
   componentType: ["component_type", "componentType", "type", "kind"],
   layer: ["layer", "physical_layer"],
+  module: ["module", "module_id", "moduleId", "subgraph", "subgraph_id", "subgraphId"],
   cabinet: ["cabinet", "cabinet_id", "cabinetId", "zone"],
   slot: ["slot", "slot_id", "slotId"],
   order: ["order", "sort_order", "sortOrder", "position_order"],
   displayName: ["display_name", "displayName", "name", "label"],
+  templateId: ["template_id", "templateId", "display_template", "displayTemplate"],
+  templateVariant: ["template_variant", "templateVariant", "variant"],
+  templateParams: ["template_params", "templateParams", "params"],
   remarks: ["remarks", "remark", "notes", "comment"]
 };
 
@@ -25,10 +29,14 @@ const componentRowSchema = z.object({
   nodeId: z.string().trim().min(1),
   componentType: z.string().trim().min(1),
   layer: z.enum(layerValues as [LayerType, ...LayerType[]]).optional(),
+  module: z.string().trim().optional(),
   cabinet: z.string().trim().optional(),
   slot: z.string().trim().optional(),
   order: z.string().trim().optional(),
   displayName: z.string().trim().optional(),
+  templateId: z.string().trim().optional(),
+  templateVariant: z.string().trim().optional(),
+  templateParams: z.string().trim().optional(),
   remarks: z.string().trim().optional()
 });
 
@@ -84,9 +92,13 @@ export function applyComponentMetadata(graph: CanonicalGraph, components: Compon
         metadata: {
           ...node.metadata,
           componentType: component.componentType,
+          module: component.module,
           cabinet: component.cabinet,
           slot: component.slot,
           order: component.order,
+          templateId: component.templateId,
+          templateVariant: component.templateVariant,
+          templateParams: component.templateParams,
           remarks: component.remarks
         }
       };

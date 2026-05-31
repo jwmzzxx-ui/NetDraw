@@ -60,7 +60,7 @@ export async function runPipeline(options: RunPipelineOptions): Promise<Pipeline
   const logicalCableCount = graph.edges.filter((edge) => edge.type === "logical-cable").length;
   const routeSegmentCount = graph.edges.filter((edge) => edge.type === "route-segment").length;
   const analysisReport = analyzeGraph(graph);
-  const positionedGraph = createPresetLayout(graph, rules.layout);
+  const positionedGraph = createPresetLayout(graph, rules.layout, rules.display);
 
   await mkdir(options.outDir, { recursive: true });
   await writeFile(join(options.outDir, "canonical-graph.json"), `${JSON.stringify(graph, null, 2)}\n`, "utf8");

@@ -10,6 +10,10 @@
   - Optional component metadata table. Use it to enrich node layer, cabinet, slot, order, and display name.
 - `rules-template.json`
   - Optional project rule file for routing, layout, style, and export naming.
+- `basic-topology-interface-template.csv`
+- `basic-topology-components-template.csv`
+- `basic-topology-rules-template.json`
+  - Ready-to-import baseline topology template for part, breakout, interface, control, switch, and IPC layers.
 
 ## Interface Table
 
@@ -73,6 +77,7 @@ Required columns:
 Optional columns:
 
 - `layer`
+- `module`
 - `cabinet`
 - `slot`
 - `order`
@@ -94,3 +99,5 @@ Allowed `layer` values:
 - `switch`
 - `ipc`
 - `route`
+
+`module` is used to split a large drawing into module subgraphs and to build module-level summary views.

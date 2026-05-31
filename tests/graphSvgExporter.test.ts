@@ -49,6 +49,35 @@ describe("graph SVG exporter", () => {
     expect(svg).toContain("150,260");
     expect(svg).not.toContain(`id="edge-cable:CAB-001"><line`);
   });
+
+  test("renders display templates into exported SVG nodes", () => {
+    const graph = createFixtureGraph();
+    graph.displayRules = {
+      templates: {
+        "part-sensor": {
+          id: "part-sensor",
+          label: "Part sensor",
+          width: 190,
+          height: 96,
+          shape: "round-rectangle",
+          fill: "#ffffff",
+          stroke: "#737373",
+          strokeWidth: 2,
+          labelPosition: "title",
+          anchors: [{ id: "left", side: "left", offset: 0.62 }]
+        }
+      },
+      nodeTemplates: { "device:PART_A": "part-sensor" },
+      kindTemplates: { device: "part-sensor" },
+      templateOverrides: { "device:PART_A": { label: "Photo Sensor" } }
+    };
+
+    const svg = renderGraphSvg(graph);
+
+    expect(svg).toContain("Photo Sensor");
+    expect(svg).toContain("width=\"190\"");
+    expect(svg).toContain("<circle");
+  });
 });
 
 function createFixtureGraph() {

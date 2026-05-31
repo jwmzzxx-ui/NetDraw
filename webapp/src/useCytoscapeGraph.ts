@@ -5,8 +5,6 @@ import { cytoscapeStylesheetFromRules } from "../../src/styleRules.js";
 import { buildCytoscapeElements, type GraphViewState } from "./graphAdapter.js";
 import { registerElkLayout } from "./useLocalElkLayout.js";
 
-const stylesheet: cytoscape.StylesheetStyle[] = cytoscapeStylesheetFromRules();
-
 export function useCytoscapeGraph(
   graph: PositionedGraph,
   state: GraphViewState,
@@ -18,6 +16,7 @@ export function useCytoscapeGraph(
   const cyRef = useRef<cytoscape.Core | null>(null);
   const previousGraphRef = useRef<PositionedGraph | null>(null);
   const elements = useMemo(() => buildCytoscapeElements(graph, state), [graph, state]);
+  const stylesheet = useMemo(() => cytoscapeStylesheetFromRules(undefined, graph.displayRules), [graph.displayRules]);
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -64,6 +63,7 @@ export function useCytoscapeGraph(
     const currentPan = cy.pan();
     cy.batch(() => {
       cy.elements().remove();
+      cy.style(stylesheet);
       cy.add([...elements.nodes, ...elements.edges]);
       cy.layout({ name: "preset", fit: graphChanged, padding: 60 }).run();
       if (!graphChanged) {

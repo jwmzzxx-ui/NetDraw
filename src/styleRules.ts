@@ -1,5 +1,5 @@
 import type { StylesheetStyle } from "cytoscape";
-import type { NetType } from "./types.js";
+import type { DisplayRules, NetType } from "./types.js";
 
 export interface NetTypeStyleRule {
   label: NetType;
@@ -74,7 +74,7 @@ export function buildLegendItems(rules: StyleRules = DEFAULT_STYLE_RULES): Legen
   }));
 }
 
-export function cytoscapeStylesheetFromRules(rules: StyleRules = DEFAULT_STYLE_RULES): StylesheetStyle[] {
+export function cytoscapeStylesheetFromRules(rules: StyleRules = DEFAULT_STYLE_RULES, _displayRules?: DisplayRules): StylesheetStyle[] {
   const baseNode = rules.nodes.base;
   return [
     {
@@ -99,6 +99,21 @@ export function cytoscapeStylesheetFromRules(rules: StyleRules = DEFAULT_STYLE_R
     nodeKindStyle("board", rules.nodes.board),
     nodeKindStyle("port", rules.nodes.port),
     nodeKindStyle("route-node", rules.nodes["route-node"]),
+    {
+      selector: ".has-template",
+      style: {
+        width: "data(templateWidth)",
+        height: "data(templateHeight)",
+        shape: "data(templateShape)" as never,
+        "background-color": "data(templateFill)",
+        "border-color": "data(templateStroke)",
+        "border-width": "data(templateStrokeWidth)",
+        "background-image": "data(templateBackground)",
+        "background-fit": "contain",
+        "background-clip": "none",
+        "background-opacity": 1
+      }
+    },
     {
       selector: "edge",
       style: {

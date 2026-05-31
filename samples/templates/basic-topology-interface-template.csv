@@ -1,0 +1,6 @@
+row_id,src_device,src_board,src_port,dst_device,dst_board,dst_port,net_type,medium,cable_id,cable_type,route_hint,redundancy_group,direction,remarks
+R001,PART_A,PART_BOARD,P1,BRK_A,BREAKOUT_BOARD,X1,COMM,ethernet,CAB-001,CAT6,,,forward,part to breakout
+R002,BRK_A,BREAKOUT_BOARD,X2,IFACE_A,INTERFACE_BOARD,J1,COMM,ethernet,CAB-002,CAT6,,,forward,breakout to interface
+R003,IFACE_A,INTERFACE_BOARD,J2,CTRL_A,CONTROL_BOARD,IO1,SIGNAL,shielded,CAB-003,signal,,,forward,interface to control
+R004,CTRL_A,CONTROL_BOARD,IO2,SW_A,SWITCH_CARD,GE1,COMM,ethernet,CAB-004,CAT6,,,forward,control to switch
+R005,SW_A,SWITCH_CARD,GE2,IPC_A,IPC_IO,LAN1,COMM,fiber,CAB-005,fiber,,,forward,switch to ipc

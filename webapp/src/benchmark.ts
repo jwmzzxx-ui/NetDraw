@@ -57,6 +57,7 @@ export function generateSyntheticPositionedGraph(options: SyntheticGraphOptions)
       position: { x: 280 + (index % 12) * 58, y: 80 + Math.floor(index / 12) * 34 },
       layout: {
         layer: "route",
+        module: "",
         cabinet: "",
         slot: "",
         device: `TRAY_${index}`,
@@ -115,6 +116,7 @@ function makePortNode(device: string, board: string, port: string, layer: string
     position: { x, y: 40 + order * 22 },
     layout: {
       layer,
+      module: layer === "part" ? "BENCH-SOURCE" : "BENCH-TARGET",
       cabinet: "",
       slot: "",
       device,

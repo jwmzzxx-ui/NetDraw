@@ -164,13 +164,14 @@ function buildComponentsCsvRows(
     id: string;
     type: string;
     displayName: string;
-    layout: { layer: string; cabinet: string; slot: string; order: number };
+    layout: { layer: string; module?: string; cabinet: string; slot: string; order: number };
   }>
 ): ComponentRow[] {
   return nodes.map((node) => ({
     nodeId: node.id,
     componentType: node.type,
     layer: node.layout.layer as ComponentRow["layer"],
+    module: node.layout.module || `MODULE-${node.layout.layer.toUpperCase()}`,
     cabinet: node.layout.cabinet || `CAB-${node.layout.layer.toUpperCase()}`,
     slot: node.layout.slot || `SLOT-${node.layout.layer.toUpperCase()}`,
     order: String(node.layout.order),
@@ -198,7 +199,7 @@ const interfaceHeaders = [
 ];
 
 const routeHeaders = ["from_route_node", "to_route_node", "cost", "zone", "from_x", "from_y", "to_x", "to_y"];
-const componentHeaders = ["node_id", "type", "layer", "cabinet", "slot", "order", "display_name", "remarks"];
+const componentHeaders = ["node_id", "type", "layer", "module", "cabinet", "slot", "order", "display_name", "remarks"];
 
 function interfaceRowToCsvRow(row: InterfaceRow): string[] {
   return [
@@ -238,6 +239,7 @@ function componentRowToCsvRow(component: ComponentRow): string[] {
     component.nodeId,
     component.componentType,
     component.layer ?? "",
+    component.module ?? "",
     component.cabinet ?? "",
     component.slot ?? "",
     component.order ?? "",

@@ -31,6 +31,10 @@ describe("style rules", () => {
         expect.objectContaining({
           selector: ".is-highlighted-node",
           style: expect.objectContaining({ "border-width": 3 })
+        }),
+        expect.objectContaining({
+          selector: ".has-template",
+          style: expect.objectContaining({ width: "data(templateWidth)", "background-image": "data(templateBackground)" })
         })
       ])
     );

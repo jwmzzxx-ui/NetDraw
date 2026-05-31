@@ -47,7 +47,7 @@ function node(
     displayName,
     parent,
     position: { x, y },
-    layout: { layer, cabinet: "", slot: "", device: displayName, board: "", order: 0, reason: "demo preset" }
+    layout: { layer, module: layer === "route" ? "" : "DEMO-MODULE", cabinet: "", slot: "", device: displayName, board: "", order: 0, reason: "demo preset" }
   };
 }
 

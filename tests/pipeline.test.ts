@@ -200,6 +200,14 @@ describe("runPipeline", () => {
             AC: { color: "#aa3300", width: 5 }
           }
         },
+        display: {
+          nodeTemplates: {
+            "device:PART_A": "part-sensor"
+          },
+          templateOverrides: {
+            "device:PART_A": { width: 210, label: "Part Sensor" }
+          }
+        },
         export: {
           fileBaseName: "rules-cables"
         }
@@ -217,6 +225,8 @@ describe("runPipeline", () => {
     const positionedGraph = JSON.parse(await readFile(join(outDir, "positioned-graph.json"), "utf8"));
     const overridden = positionedGraph.nodes.find((node: { id: string }) => node.id === "port:PART_A/BRK_A/PWR_IN");
     expect(overridden.position).toEqual({ x: 1111, y: 222 });
+    expect(positionedGraph.displayRules.nodeTemplates["device:PART_A"]).toBe("part-sensor");
+    expect(positionedGraph.displayRules.templateOverrides["device:PART_A"]).toEqual(expect.objectContaining({ width: 210, label: "Part Sensor" }));
     const styleRules = JSON.parse(await readFile(join(outDir, "style-rules.json"), "utf8"));
     expect(styleRules.netTypes.AC.color).toBe("#aa3300");
     const svg = await readFile(join(outDir, "graph.svg"), "utf8");

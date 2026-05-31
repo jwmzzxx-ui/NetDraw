@@ -6,8 +6,14 @@
     "dx": 260,
     "dy": 32,
     "cabinetGap": 900,
+    "moduleGap": 700,
     "slotGap": 120,
-    "boardGap": 28
+    "boardGap": 28,
+    "moduleOrder": ["MODULE-A"],
+    "projectionDefaults": {
+      "mode": "layer",
+      "minVisibleLayer": "breakout"
+    }
   },
   "style": {
     "netTypes": {
