@@ -1,0 +1,29 @@
+{
+  "normalization": {
+    "aliases": {
+      "devices": {
+        "Control-A": {
+          "normalizedName": "CTRL_A",
+          "displayName": "Control A"
+        },
+        "Switch 1": "SW_1"
+      },
+      "boards": {
+        "控制板A": {
+          "normalizedName": "CTRL_BOARD",
+          "displayName": "Control Board"
+        }
+      },
+      "ports": {
+        "LAN 1": "LAN1",
+        "GE 01": "GE_01"
+      }
+    }
+  },
+  "layout": {
+    "deviceOrder": ["CTRL_A", "SW_1"]
+  },
+  "export": {
+    "fileBaseName": "aliases-cables"
+  }
+}

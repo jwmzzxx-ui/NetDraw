@@ -1,0 +1,10 @@
+node_modules/
+.npm-cache/
+output/
+dist/
+coverage/
+data/
+.qa/
+.chrome-qa-*/
+*.log
+*.err.log

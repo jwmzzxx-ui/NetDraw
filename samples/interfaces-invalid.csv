@@ -1,0 +1,2 @@
+row_id,src_device,src_board,src_port,dst_device,dst_board,dst_port,net_type,medium,cable_id,cable_type,route_hint
+BAD001,PART_A,BRK_A,,PDU_1,PDU_SLOT,OUT_01,POWER,power,CAB-BAD-001,3C2.5,SPL_A>PDU_1

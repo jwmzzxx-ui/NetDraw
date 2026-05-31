@@ -1,0 +1,38 @@
+{
+  "layout": {
+    "dx": 260,
+    "dy": 32,
+    "cabinetGap": 900,
+    "slotGap": 120,
+    "boardGap": 28,
+    "deviceOrder": ["PART_A", "PDU_1", "CTRL_A", "SW_1", "IPC_1"],
+    "overridePositions": {
+      "port:PART_A/BRK_A/PWR_IN": {
+        "x": 40,
+        "y": 160
+      }
+    },
+    "edgeBendPoints": {
+      "cable:CAB-COMM-001": [
+        {
+          "x": 300,
+          "y": 260
+        }
+      ]
+    }
+  },
+  "style": {
+    "netTypes": {
+      "AC": {
+        "color": "#aa3300",
+        "width": 5
+      },
+      "COMM": {
+        "lineStyle": "dashed"
+      }
+    }
+  },
+  "export": {
+    "fileBaseName": "rules-cables"
+  }
+}

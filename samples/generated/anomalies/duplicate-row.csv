@@ -1,0 +1,3 @@
+row_id,src_device,src_board,src_port,dst_device,dst_board,dst_port,net_type,medium,cable_id
+DUP001,PART_A,BRK_A,PWR_IN,PDU_1,PDU_SLOT,IN_01,AC,power,CAB-DUP-001
+DUP001,CTRL_A,CTRL_BOARD,LAN1,SW_1,LINE_CARD,GE_01,COMM,ethernet,CAB-DUP-002

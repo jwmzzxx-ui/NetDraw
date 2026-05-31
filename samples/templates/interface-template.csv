@@ -1,0 +1,3 @@
+row_id,src_device,src_board,src_port,dst_device,dst_board,dst_port,net_type,medium,cable_id,cable_type,route_hint,redundancy_group,direction,remarks
+R001,DEVICE_A,BOARD_A,PORT_01,DEVICE_B,BOARD_B,PORT_01,COMM,ethernet,CAB-001,CAT6,ROUTE_A>ROUTE_B,,bidirectional,example row
+R002,DEVICE_A,BOARD_A,PORT_02,DEVICE_C,BOARD_C,PORT_05,DC,power,CAB-002,2C1.5,,,single,optional fields can be blank

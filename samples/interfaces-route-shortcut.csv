@@ -1,0 +1,2 @@
+row_id,src_device,src_board,src_port,dst_device,dst_board,dst_port,net_type,medium,cable_id,cable_type,route_hint,redundancy_group,direction,remarks
+R100,PART_A,CTRL_A,LAN1,SW_1,LINE_CARD,GE_01,COMM,ethernet,CAB-ROUTE-001,CAT6,SPL_A>CAB_3,A,bidirectional,route completion sample

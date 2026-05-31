@@ -1,0 +1,4 @@
+from_route_node,to_route_node,cost,zone
+SPL_A,PDU_1,1,CAB_A
+PDU_1,CAB_3,1,CAB_A
+SPL_A,CAB_3,5,CAB_A

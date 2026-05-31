@@ -1,0 +1,30 @@
+{
+  "routing": {
+    "preferAStar": false
+  },
+  "layout": {
+    "dx": 280,
+    "dy": 28,
+    "cabinetGap": 920,
+    "slotGap": 116,
+    "boardGap": 26
+  },
+  "style": {
+    "netTypes": {
+      "AC": {
+        "color": "#aa3300",
+        "width": 5
+      },
+      "COMM": {
+        "lineStyle": "dashed"
+      },
+      "SAFETY": {
+        "color": "#d1242f",
+        "width": 4
+      }
+    }
+  },
+  "export": {
+    "fileBaseName": "generated-sample-cables"
+  }
+}

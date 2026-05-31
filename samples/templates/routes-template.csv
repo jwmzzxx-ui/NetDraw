@@ -1,0 +1,3 @@
+from_route_node,to_route_node,cost,zone,from_x,from_y,to_x,to_y,capacity
+ROUTE_A,ROUTE_B,1,CAB-A,0,0,120,0,
+ROUTE_B,ROUTE_C,1,CAB-A,120,0,240,0,

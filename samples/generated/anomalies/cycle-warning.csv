@@ -1,0 +1,3 @@
+row_id,src_device,src_board,src_port,dst_device,dst_board,dst_port,net_type,medium,cable_id,cable_type,route_hint,redundancy_group,direction,remarks
+R-CYCLE-001,CTRL_A,SAFE_CARD,OUT_01,SAFE_IO,SAFE_PANEL,CH1,SAFETY,safety,CAB-CYCLE-001,2C1.5,SPL_SAFE>SAFE_IO,A,forward,cycle test edge one
+R-CYCLE-002,SAFE_IO,SAFE_PANEL,CH1,CTRL_A,SAFE_CARD,OUT_01,SAFETY,safety,CAB-CYCLE-002,2C1.5,SAFE_IO>SPL_SAFE,A,reverse,cycle test edge two

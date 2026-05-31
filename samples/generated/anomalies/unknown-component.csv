@@ -1,0 +1,6 @@
+row_id,src_device,src_board,src_port,dst_device,dst_board,dst_port,net_type,medium,cable_id,cable_type,route_hint,redundancy_group,direction,remarks
+R001,PART_A,BRK_A,PWR_IN,PDU_1,PDU_SLOT,OUT_01,AC,power,CAB-AC-001,3C2.5,SPL_A>PDU_1,,bidirectional,main ac feed
+R002,PART_A,CTRL_A,DC_24V,PSU_1,DC_OUT,OUT_24V,DC,power,CAB-DC-001,2C1.5,PDU_1>TRAY_1,,bidirectional,dc supply
+R003,CTRL_A,ETH_A,LAN1,SW_1,LINE_CARD,GE_01,COMM,ethernet,CAB-COMM-001,CAT6,TRAY_1>SW_1,A,bidirectional,control network
+R004,SENSOR_RACK,IO_BOARD,AI_01,CTRL_A,IO_CARD,AI_01,SIGNAL,shielded,CAB-SIG-001,2C0.75,SPL_A>CTRL_A,,single,analog input
+R005,E_STOP_PANEL,SAFE_IO,CH1,CTRL_A,SAFE_CARD,SAFE_01,SAFETY,safety,CAB-SAFE-001,4C0.75,SPL_SAFE>CTRL_A,A,bidirectional,safety loop

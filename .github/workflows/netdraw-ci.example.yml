@@ -1,0 +1,27 @@
+name: NetDraw CI Example
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run web:build
+      - run: npm run demo
+      - run: npm run demo:routes
+      - run: npm run demo:astar
+      - run: npm run demo:aliases
+      - run: npm run verify:samples
+      - run: npm run benchmark -- --cables 5000 --hops 2 --out output/benchmark

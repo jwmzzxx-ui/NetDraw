@@ -1,0 +1,2 @@
+row_id,src_device,src_board,src_port,dst_device,dst_board,dst_port,net_type,medium,cable_id,cable_type,route_hint,redundancy_group,direction,remarks
+ALIAS001,Control-A,控制板A,LAN 1,Switch 1,LINE_CARD,GE 01,COMM,ethernet,CAB-ALIAS-001,CAT6,SPL_A>CAB_3,A,bidirectional,alias normalization sample

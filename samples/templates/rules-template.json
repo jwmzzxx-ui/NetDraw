@@ -1,0 +1,26 @@
+{
+  "routing": {
+    "preferAStar": false
+  },
+  "layout": {
+    "dx": 260,
+    "dy": 32,
+    "cabinetGap": 900,
+    "slotGap": 120,
+    "boardGap": 28
+  },
+  "style": {
+    "netTypes": {
+      "AC": {
+        "color": "#aa3300",
+        "width": 5
+      },
+      "COMM": {
+        "lineStyle": "dashed"
+      }
+    }
+  },
+  "export": {
+    "fileBaseName": "netdraw-cables"
+  }
+}

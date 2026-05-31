@@ -1,0 +1,3 @@
+node_id,type,layer,cabinet,slot,order,display_name
+device:PART_A,part,part,CAB-A,SLOT-01,1,Part Alpha
+device:UNKNOWN_PANEL,part,part,CAB-Z,SLOT-99,9,Unknown Panel

@@ -1,0 +1,12 @@
+node_id,type,layer,cabinet,slot,order,display_name,remarks
+device:PART_A,part,part,CAB-A,SLOT-01,1,Part A,main equipment part
+board:PART_A/BRK_A,breakout,breakout,CAB-A,SLOT-01,2,Breakout A,power breakout board
+port:PART_A/BRK_A/PWR_IN,port,breakout,CAB-A,SLOT-01,3,Power Input,primary AC input
+device:PDU_1,pdu,breakout,CAB-PDU,SLOT-PDU,1,PDU 1,power distribution unit
+board:PDU_1/PDU_SLOT,pdu_slot,breakout,CAB-PDU,SLOT-PDU,2,PDU Slot,pdu output slot
+device:CTRL_A,controller,control,CAB-CTRL,SLOT-CTRL,1,Controller A,control cabinet
+board:CTRL_A/IO_CARD,io_card,control,CAB-CTRL,SLOT-CTRL,2,IO Card,signal io
+device:SW_1,switch,switch,CAB-NET,SLOT-SW,1,Switch 1,network switch
+board:SW_1/LINE_CARD,line_card,switch,CAB-NET,SLOT-SW,2,Line Card,switch line card
+device:IPC_1,ipc,ipc,CAB-IPC,SLOT-IPC,1,IPC 1,industrial pc
+board:IPC_1/NIC,nic,ipc,CAB-IPC,SLOT-IPC,2,NIC,ipc network interface

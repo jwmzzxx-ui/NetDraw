@@ -1,0 +1,4 @@
+node_id,type,layer,cabinet,slot,order,display_name,remarks
+device:DEVICE_A,part,part,CAB-A,SLOT-01,1,Device A,optional metadata
+board:DEVICE_A/BOARD_A,board,part,CAB-A,SLOT-01,2,Board A,optional metadata
+port:DEVICE_A/BOARD_A/PORT_01,port,part,CAB-A,SLOT-01,3,Port 01,optional metadata
