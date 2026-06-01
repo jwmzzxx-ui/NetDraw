@@ -2,40 +2,45 @@ import type {
   CanonicalGraph,
   DisplayRules,
   GraphNode,
+  LayerId,
   LayoutRules,
   LayoutWarning,
   PositionedGraph,
   PositionedNode,
   Position,
-  TemplateAnchor
+  TemplatePort
 } from "./types.js";
-import { DEFAULT_DISPLAY_RULES, getTemplateAnchorPosition, resolveDisplayTemplate } from "./displayRules.js";
+import { DEFAULT_DISPLAY_RULES, getTemplatePortPosition, resolveDisplayTemplate } from "./displayRules.js";
+import { CANONICAL_LAYER_IDS, layerLabelFor, normalizeLayerId } from "./layers.js";
 
 export const DEFAULT_LAYOUT_RULES: LayoutRules = {
-  layerOrder: ["part", "breakout", "interface", "control", "switch", "ipc", "route"],
+  layerOrder: [...CANONICAL_LAYER_IDS, "route"],
   dx: 240,
   dy: 28,
   cabinetGap: 900,
   moduleGap: 700,
   slotGap: 120,
   boardGap: 24,
-  projectionDefaults: { mode: "layer", minVisibleLayer: "breakout" }
+  projectionDefaults: { mode: "layer", minVisibleLayer: "L1" }
 };
 
 interface PlacementInput {
   node: GraphNode;
   layer: string;
+  layerId: LayerId;
+  layerName: string;
   module: string;
   cabinet: string;
   slot: string;
-  device: string;
-  board: string;
+  component: string;
+  pdmCode: string;
+  componentCode: string;
   order: number;
   cabinetRank: number;
   moduleRank: number;
   slotRank: number;
+  componentRank: number;
   boardRank: number;
-  deviceRank: number;
 }
 
 export function createPresetLayout(
@@ -66,15 +71,20 @@ export function createPresetLayout(
       position,
       layout: {
         layer: placement.layer,
+        layerId: placement.layerId,
+        layerName: placement.layerName,
         module: placement.module,
         cabinet: placement.cabinet,
         slot: placement.slot,
-        device: placement.device,
-        board: placement.board,
+        device: placement.component,
+        board: "",
+        component: placement.component,
+        pdmCode: placement.pdmCode,
+        componentCode: placement.componentCode,
         order: placement.order,
         reason: override
           ? `override position applied for ${placement.node.id}`
-          : `module=${placement.module}; layer=${placement.layer}; cabinet=${placement.cabinet}; slot=${placement.slot}; device=${placement.device}; board=${placement.board}; order=${placement.order}`
+          : `module=${placement.module}; layer=${placement.layerId}; cabinet=${placement.cabinet}; slot=${placement.slot}; component=${placement.pdmCode || placement.component}; order=${placement.order}`
       }
     };
   });
@@ -99,38 +109,44 @@ export function explainPosition(positionedGraph: PositionedGraph, nodeId: string
 
 function buildPlacementInput(node: GraphNode, rules: LayoutRules, rankContext: RankContext): PlacementInput {
   const layer = resolveLayer(node, rules);
+  const layerId = resolveLayerId(node, rules);
+  const layerName = node.metadata?.layerName ?? layerLabelFor(layerId);
   const module = node.metadata?.module ?? "";
   const cabinet = node.metadata?.cabinet ?? "";
   const slot = node.metadata?.slot ?? "";
-  const device = resolveDeviceName(node);
-  const board = resolveBoardName(node);
+  const component = resolveComponentName(node);
+  const pdmCode = node.pdmCode ?? node.metadata?.pdmCode ?? node.componentCode ?? node.metadata?.componentCode ?? node.metadata?.componentId ?? component;
+  const legacyDevice = resolveLegacyDeviceName(node);
+  const legacyBoard = resolveLegacyBoardName(node);
   const order = Number(node.metadata?.order ?? "0");
 
   return {
     node,
     layer,
+    layerId,
+    layerName,
     module,
     cabinet,
     slot,
-    device,
-    board,
+    component,
+    pdmCode,
+    componentCode: pdmCode,
     order: Number.isFinite(order) ? order : 0,
     moduleRank: orderedRank(module, rules.moduleOrder, rankContext.moduleRanks),
     cabinetRank: rankContext.cabinetRanks.get(cabinet) ?? 0,
     slotRank: rankContext.slotRanks.get(slot) ?? 0,
-    deviceRank: orderedRank(device, rules.deviceOrder, rankContext.deviceRanks),
-    boardRank: orderedRank(board, rules.boardOrder, rankContext.boardRanks)
+    componentRank: orderedRank(legacyDevice || pdmCode || component, rules.deviceOrder, rankContext.componentRanks),
+    boardRank: orderedRank(legacyBoard, rules.boardOrder, rankContext.boardRanks)
   };
 }
 
 function comparePlacement(a: PlacementInput, b: PlacementInput, rules: LayoutRules): number {
   return (
-    layerRank(a.layer, rules) - layerRank(b.layer, rules) ||
+    layerRank(a.layerId, rules) - layerRank(b.layerId, rules) ||
     a.moduleRank - b.moduleRank ||
     a.cabinetRank - b.cabinetRank ||
     a.slotRank - b.slotRank ||
-    a.deviceRank - b.deviceRank ||
-    a.boardRank - b.boardRank ||
+    a.componentRank - b.componentRank ||
     a.order - b.order ||
     a.node.id.localeCompare(b.node.id)
   );
@@ -138,12 +154,12 @@ function comparePlacement(a: PlacementInput, b: PlacementInput, rules: LayoutRul
 
 function basePositionFor(placement: PlacementInput, rules: LayoutRules): Position {
   return {
-    x: layerToX(placement.layer, rules),
+    x: layerToX(placement.layerId, rules),
     y:
       placement.moduleRank * (rules.moduleGap ?? DEFAULT_LAYOUT_RULES.moduleGap ?? 0) +
       placement.cabinetRank * rules.cabinetGap +
       placement.slotRank * rules.slotGap +
-      placement.deviceRank * rules.dy +
+      placement.componentRank * rules.dy +
       placement.boardRank * rules.boardGap +
       placement.order * rules.dy
   };
@@ -164,21 +180,21 @@ function anchoredPortPosition(
     return undefined;
   }
   const parentTemplate = resolveDisplayTemplate(parentPlacement.node, displayRules);
-  const anchor = matchAnchor(placement.node, parentTemplate.anchors ?? []);
-  return anchor ? getTemplateAnchorPosition(parentTemplate, parentPosition, anchor) : undefined;
+  const port = matchPort(placement.node, parentTemplate.ports ?? []);
+  return port ? getTemplatePortPosition(parentTemplate, parentPosition, port) : undefined;
 }
 
-function matchAnchor(node: GraphNode, anchors: TemplateAnchor[]): TemplateAnchor | undefined {
+function matchPort(node: GraphNode, ports: TemplatePort[]): TemplatePort | undefined {
   const params = parseTemplateParams(node.metadata?.templateParams);
-  const requested = params.anchorId ?? params.anchor ?? node.metadata?.templateVariant;
+  const requested = params.portId ?? params.anchorId ?? params.anchor ?? node.metadata?.templateVariant;
   if (requested) {
-    const direct = anchors.find((anchor) => anchor.id === requested || anchor.label === requested);
+    const direct = ports.find((port) => port.id === requested || port.label === requested || port.connectorName === requested);
     if (direct) {
       return direct;
     }
   }
   const haystack = `${node.id} ${node.displayName}`.toLowerCase();
-  return anchors.find((anchor) => haystack.includes(anchor.id.toLowerCase()) || (anchor.label && haystack.includes(anchor.label.toLowerCase())));
+  return ports.find((port) => haystack.includes(port.id.toLowerCase()) || (port.connectorName && haystack.includes(port.connectorName.toLowerCase())) || (port.label && haystack.includes(port.label.toLowerCase())));
 }
 
 function parseTemplateParams(value: string | undefined): Record<string, string> {
@@ -194,7 +210,11 @@ function parseTemplateParams(value: string | undefined): Record<string, string> 
 }
 
 function resolveLayer(node: GraphNode, rules: LayoutRules): string {
-  return rules.nodeLayers?.[node.id] ?? node.layer ?? node.metadata?.layer ?? "custom";
+  return resolveLayerId(node, rules);
+}
+
+function resolveLayerId(node: GraphNode, rules: LayoutRules): LayerId {
+  return normalizeLayerId(rules.nodeLayers?.[node.id] ?? node.metadata?.layerId ?? node.layer ?? node.metadata?.layer);
 }
 
 function layerToX(layer: string, rules: LayoutRules): number {
@@ -203,17 +223,26 @@ function layerToX(layer: string, rules: LayoutRules): number {
 
 function layerRank(layer: string, rules: LayoutRules): number {
   const index = rules.layerOrder.indexOf(layer);
-  return index >= 0 ? index : rules.layerOrder.length;
+  if (index >= 0) {
+    return index;
+  }
+  const normalizedLayer = normalizeLayerId(layer);
+  const normalizedIndex = rules.layerOrder.map((entry) => entry === "route" ? "route" : normalizeLayerId(entry)).indexOf(normalizedLayer);
+  return normalizedIndex >= 0 ? normalizedIndex : rules.layerOrder.length;
 }
 
-function resolveDeviceName(node: GraphNode): string {
+function resolveComponentName(node: GraphNode): string {
+  return node.componentName ?? node.metadata?.componentName ?? node.displayName;
+}
+
+function resolveLegacyDeviceName(node: GraphNode): string {
   if (node.type === "device") {
     return node.displayName;
   }
-  return node.id.split(":")[1]?.split("/")[0] ?? node.displayName;
+  return node.id.split(":")[1]?.split("/")[0] ?? "";
 }
 
-function resolveBoardName(node: GraphNode): string {
+function resolveLegacyBoardName(node: GraphNode): string {
   if (node.type === "board") {
     return node.displayName;
   }
@@ -224,7 +253,7 @@ interface RankContext {
   moduleRanks: Map<string, number>;
   cabinetRanks: Map<string, number>;
   slotRanks: Map<string, number>;
-  deviceRanks: Map<string, number>;
+  componentRanks: Map<string, number>;
   boardRanks: Map<string, number>;
 }
 
@@ -232,22 +261,26 @@ function buildRankContext(nodes: GraphNode[], rules: LayoutRules): RankContext {
   const modules = new Set<string>([""]);
   const cabinets = new Set<string>([""]);
   const slots = new Set<string>([""]);
-  const devices = new Set<string>();
+  const components = new Set<string>();
   const boards = new Set<string>([""]);
 
   for (const node of nodes) {
     modules.add(node.metadata?.module ?? "");
     cabinets.add(node.metadata?.cabinet ?? "");
     slots.add(node.metadata?.slot ?? "");
-    devices.add(resolveDeviceName(node));
-    boards.add(resolveBoardName(node));
+    components.add(node.pdmCode ?? node.metadata?.pdmCode ?? node.componentCode ?? node.metadata?.componentCode ?? resolveComponentName(node));
+    const legacyDevice = resolveLegacyDeviceName(node);
+    if (legacyDevice) {
+      components.add(legacyDevice);
+    }
+    boards.add(resolveLegacyBoardName(node));
   }
 
   return {
     moduleRanks: sortedRankMap(modules, rules.moduleOrder),
     cabinetRanks: sortedRankMap(cabinets),
     slotRanks: sortedRankMap(slots),
-    deviceRanks: sortedRankMap(devices, rules.deviceOrder),
+    componentRanks: sortedRankMap(components, rules.deviceOrder),
     boardRanks: sortedRankMap(boards, rules.boardOrder)
   };
 }

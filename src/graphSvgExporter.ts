@@ -1,8 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { DEFAULT_DISPLAY_RULES, getTemplateAnchorPosition, resolveDisplayTemplate } from "./displayRules.js";
+import { buildCableTemplateContext, DEFAULT_DISPLAY_RULES, getTemplatePortPosition, renderTemplateTextBox, resolveCableTemplate, resolveDisplayTemplate, type CableTemplateContext } from "./displayRules.js";
 import { buildLegendItems, DEFAULT_STYLE_RULES, type StyleRules } from "./styleRules.js";
-import type { GraphEdge, PositionedGraph, PositionedNode } from "./types.js";
+import type { CableTemplate, GraphEdge, PositionedGraph, PositionedNode, Position, TemplatePort, TemplatePortLabel, TemplateTextBox } from "./types.js";
 
 export interface GraphSvgOptions {
   title?: string;
@@ -25,7 +25,7 @@ export function renderGraphSvg(graph: PositionedGraph, options: GraphSvgOptions 
   const title = options.title ?? "NetDraw Graph";
   const viewBox = calculateViewBox(graph);
   const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
-  const edgeSvg = graph.edges.map((edge) => renderEdge(edge, nodeById, rules, graph.rules.edgeBendPoints?.[edge.id] ?? [])).join("\n");
+  const edgeSvg = graph.edges.map((edge) => renderEdge(edge, nodeById, rules, graph.rules.edgeBendPoints?.[edge.id] ?? [], graph)).join("\n");
   const nodeSvg = graph.nodes.map((node) => renderNode(node, rules, graph)).join("\n");
   const legendSvg = renderLegend(viewBox, rules);
 
@@ -51,16 +51,18 @@ export async function writeGraphSvg(graph: PositionedGraph, filePath: string, op
   await writeFile(filePath, renderGraphSvg(graph, options), "utf8");
 }
 
-function renderEdge(edge: GraphEdge, nodeById: Map<string, PositionedNode>, rules: StyleRules, bendPoints: Array<{ x: number; y: number }>): string {
+function renderEdge(edge: GraphEdge, nodeById: Map<string, PositionedNode>, rules: StyleRules, bendPoints: Array<{ x: number; y: number }>, graph: PositionedGraph): string {
   const source = nodeById.get(edge.source);
   const target = nodeById.get(edge.target);
   if (!source || !target) {
     return "";
   }
+  const cableTemplate = edge.type === "logical-cable" ? resolveCableTemplate(edge, graph.displayRules ?? DEFAULT_DISPLAY_RULES) : null;
   const style = edge.type === "route-segment" ? rules.routeSegment : rules.netTypes[edge.netType as keyof typeof rules.netTypes];
-  const color = style?.color ?? "#7b8794";
-  const width = style?.width ?? 2;
-  const dash = style?.lineStyle === "dashed" ? ` stroke-dasharray="8 6"` : "";
+  const color = cableTemplate?.stroke ?? style?.color ?? "#7b8794";
+  const width = cableTemplate?.strokeWidth ?? style?.width ?? 2;
+  const lineStyle = cableTemplate?.lineStyle ?? style?.lineStyle;
+  const dash = lineStyle === "dashed" ? ` stroke-dasharray="8 6"` : "";
   const pathPoints = [source.position, ...bendPoints, target.position];
   const labelPoint = bendPoints[0] ?? {
     x: (source.position.x + target.position.x) / 2,
@@ -74,9 +76,7 @@ function renderEdge(edge: GraphEdge, nodeById: Map<string, PositionedNode>, rule
   return [
     `<g id="edge-${escapeXml(edge.id)}">`,
     path,
-    edge.type === "logical-cable"
-      ? `<text x="${labelPoint.x}" y="${labelPoint.y}" font-family="${rules.label.fontFamily}" font-size="10" text-anchor="middle" fill="#334155">${escapeXml(edge.cableId)}</text>`
-      : "",
+    edge.type === "logical-cable" ? renderCableTextBoxes(buildCableTemplateContext(edge, source, target), cableTemplate, labelPoint, source.position, target.position, rules) : "",
     `</g>`
   ].filter(Boolean).join("\n");
 }
@@ -89,7 +89,9 @@ function renderNode(node: PositionedNode, rules: StyleRules, graph: PositionedGr
   const shape =
     template.shape === "hexagon"
       ? `<polygon points="${hexagonPoints(node.position.x, node.position.y, template.width, template.height)}" fill="${template.fill}" stroke="${template.stroke}" stroke-width="${strokeWidth}"/>`
-      : `<rect x="${x}" y="${y}" width="${template.width}" height="${template.height}" rx="${template.shape === "round-rectangle" ? 8 : 0}" fill="${template.fill}" stroke="${template.stroke}" stroke-width="${strokeWidth}"/>`;
+      : template.shape === "ellipse"
+        ? `<ellipse cx="${node.position.x}" cy="${node.position.y}" rx="${template.width / 2}" ry="${template.height / 2}" fill="${template.fill}" stroke="${template.stroke}" stroke-width="${strokeWidth}"/>`
+        : `<rect x="${x}" y="${y}" width="${template.width}" height="${template.height}" rx="${template.shape === "round-rectangle" ? 8 : 0}" fill="${template.fill}" stroke="${template.stroke}" stroke-width="${strokeWidth}"/>`;
   const titleHeight = template.titleHeight ?? 0;
   const title = titleHeight > 0
     ? `<rect x="${x + strokeWidth}" y="${y + strokeWidth}" width="${template.width - strokeWidth * 2}" height="${titleHeight}" rx="${template.shape === "round-rectangle" ? 7 : 0}" fill="${template.titleFill ?? template.fill}" opacity="0.82"/>`
@@ -99,22 +101,108 @@ function renderNode(node: PositionedNode, rules: StyleRules, graph: PositionedGr
     : template.labelPosition === "title" && titleHeight > 0
       ? y + Math.max(18, titleHeight / 2 + 4)
       : node.position.y + 3;
-  const anchorSvg = (template.anchors ?? [])
-    .filter((anchor) => anchor.side !== "center")
-    .map((anchor) => {
-      const point = getTemplateAnchorPosition(template, node.position, anchor);
-      return `<circle cx="${point.x}" cy="${point.y}" r="4" fill="#ffffff" stroke="${template.stroke}" stroke-width="1"/>`;
+  const portSvg = (template.ports ?? [])
+    .filter((port) => port.side !== "center")
+    .map((port) => {
+      const point = getTemplatePortPosition(template, node.position, port);
+      return renderTemplatePortSvg(port, point, template.stroke, rules);
     })
     .join("\n");
+  const textBoxSvg = (template.textBoxes ?? []).map((box) => renderNodeTextBox(node, template, box, rules)).join("\n");
 
   return [
     `<g id="${escapeXml(node.id)}">`,
     shape,
     title,
-    anchorSvg,
+    portSvg,
+    textBoxSvg,
     `<text x="${node.position.x}" y="${labelY}" font-family="${rules.label.fontFamily}" font-size="${rules.label.fontSize}" font-weight="${template.labelPosition === "title" ? 700 : 400}" text-anchor="middle" fill="${template.titleColor ?? "#233042"}">${escapeXml(template.label)}</text>`,
     `</g>`
   ].filter(Boolean).join("\n");
+}
+
+function renderNodeTextBox(node: PositionedNode, template: { width: number; height: number }, box: TemplateTextBox, rules: StyleRules): string {
+  const value = renderTemplateTextBox(box, node);
+  if (!value) {
+    return "";
+  }
+  const originX = node.position.x - template.width / 2;
+  const originY = node.position.y - template.height / 2;
+  return renderTextBoxValue(value, originX + box.x, originY + box.y, box, rules);
+}
+
+function renderCableTextBoxes(edge: CableTemplateContext, template: CableTemplate | null, labelPoint: Position, sourcePoint: Position, targetPoint: Position, rules: StyleRules): string {
+  if (!template) {
+    return "";
+  }
+  const sourceBox = template.endpointLabels?.sourcePort;
+  const targetBox = template.endpointLabels?.targetPort;
+  const cableLabel = template.cableLabel;
+  const sourceLabelPoint = pointAlongLine(sourcePoint, targetPoint, 42);
+  const targetLabelPoint = pointAlongLine(targetPoint, sourcePoint, 42);
+  return [
+    sourceBox ? renderEndpointBox(renderTemplateTextBox(sourceBox, edge), sourceLabelPoint, sourceBox, rules) : "",
+    targetBox ? renderEndpointBox(renderTemplateTextBox(targetBox, edge), targetLabelPoint, targetBox, rules) : "",
+    cableLabel ? renderTextBoxValue(renderTemplateTextBox(cableLabel, edge), labelPoint.x - cableLabel.width / 2, labelPoint.y + cableLabel.y, cableLabel, rules) : "",
+    ...(template.textBoxes ?? []).map((box) => renderTextBoxValue(renderTemplateTextBox(box, edge), labelPoint.x + box.x - box.width / 2, labelPoint.y + box.y, box, rules))
+  ].join("\n");
+}
+
+function renderTextBoxValue(value: string, x: number, y: number, box: TemplateTextBox, rules: StyleRules): string {
+  if (!value) {
+    return "";
+  }
+  const textX = x + (box.align === "center" ? box.width / 2 : box.align === "right" ? box.width : 0);
+  const textAnchor = box.align === "center" ? "middle" : box.align === "right" ? "end" : "start";
+  const textY = y + Math.max(10, box.fontSize ?? 10);
+  return `<text x="${textX}" y="${textY}" font-family="${rules.label.fontFamily}" font-size="${box.fontSize ?? 10}" text-anchor="${textAnchor}" fill="${box.color ?? "#172033"}">${escapeXml(value)}</text>`;
+}
+
+function renderEndpointBox(value: string, point: Position, box: TemplateTextBox, rules: StyleRules): string {
+  if (!value) {
+    return "";
+  }
+  const x = point.x - box.width / 2;
+  const y = point.y - box.height / 2;
+  return [
+    `<rect x="${x}" y="${y}" width="${box.width}" height="${box.height}" fill="#ffffff" stroke="#111827" stroke-width="1"/>`,
+    renderTextBoxValue(value, x, y + Math.max(0, (box.height - (box.fontSize ?? 10)) / 2 - 2), box, rules)
+  ].join("\n");
+}
+
+function pointAlongLine(from: Position, to: Position, distance: number): Position {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.sqrt(dx * dx + dy * dy) || 1;
+  return {
+    x: from.x + (dx / length) * distance,
+    y: from.y + (dy / length) * distance
+  };
+}
+
+function renderTemplatePortSvg(port: TemplatePort, point: Position, stroke: string, rules: StyleRules): string {
+  if (port.boxWidth && port.boxHeight) {
+    const x = point.x - port.boxWidth / 2;
+    const y = point.y - port.boxHeight / 2;
+    return [
+      `<rect x="${x}" y="${y}" width="${port.boxWidth}" height="${port.boxHeight}" fill="#ffffff" stroke="${stroke}" stroke-width="1"/>`,
+      renderPortLabelSvg(port.connectorLabel, port.connectorName ?? port.label ?? port.id, point, rules),
+      renderPortLabelSvg(port.idLabel, port.id, point, rules)
+    ].join("\n");
+  }
+  return [
+    `<circle cx="${point.x}" cy="${point.y}" r="4" fill="#ffffff" stroke="${stroke}" stroke-width="1"/>`,
+    renderPortLabelSvg(port.connectorLabel, port.connectorName ?? port.label ?? port.id, point, rules),
+    renderPortLabelSvg(port.idLabel, port.id, point, rules)
+  ].join("\n");
+}
+
+function renderPortLabelSvg(label: TemplatePortLabel | undefined, text: string, point: Position, rules: StyleRules): string {
+  if (!label || !text) {
+    return "";
+  }
+  const anchor = label.align === "left" ? "start" : label.align === "right" ? "end" : "middle";
+  return `<text x="${point.x + label.x}" y="${point.y + label.y}" font-family="${rules.label.fontFamily}" font-size="${label.fontSize}" text-anchor="${anchor}" fill="${label.color ?? "#172033"}">${escapeXml(text)}</text>`;
 }
 
 function renderLegend(viewBox: ViewBox, rules: StyleRules): string {

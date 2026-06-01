@@ -17,6 +17,7 @@ const graph: PositionedGraph = {
       id: "port:A/BOARD/P1",
       type: "port",
       displayName: "P1",
+      ports: [{ portId: "P1", connectorName: "H2*2", displayName: "P1" }],
       position: { x: 0, y: 0 },
       layout: { layer: "part", module: "MODULE-A", cabinet: "", slot: "", device: "A", board: "BOARD", order: 0, reason: "test" }
     },
@@ -24,6 +25,7 @@ const graph: PositionedGraph = {
       id: "port:B/BOARD/P2",
       type: "port",
       displayName: "P2",
+      ports: [{ portId: "P2", connectorName: "RJ45", displayName: "P2" }],
       position: { x: 200, y: 0 },
       layout: { layer: "control", module: "MODULE-B", cabinet: "", slot: "", device: "B", board: "BOARD", order: 0, reason: "test" }
     },
@@ -41,6 +43,8 @@ const graph: PositionedGraph = {
       type: "logical-cable",
       source: "port:A/BOARD/P1",
       target: "port:B/BOARD/P2",
+      sourcePortId: "P1",
+      targetPortId: "P2",
       cableId: "C-001",
       netType: "COMM",
       medium: "ethernet",
@@ -62,6 +66,7 @@ const graph: PositionedGraph = {
       type: "route-segment",
       source: "route:TRAY_1",
       target: "port:B/BOARD/P2",
+      targetPortId: "P2",
       cableId: "C-001",
       netType: "COMM",
       medium: "ethernet",
@@ -83,6 +88,8 @@ const graph: PositionedGraph = {
       type: "logical-cable",
       source: "port:A/BOARD/P1",
       target: "port:B/BOARD/P2",
+      sourcePortId: "P1",
+      targetPortId: "P2",
       cableId: "C-002",
       netType: "COMM",
       medium: "ethernet",
@@ -117,7 +124,7 @@ describe("web graph adapter", () => {
     expect(elements.nodes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          data: expect.objectContaining({ id: "port:A/BOARD/P1", label: "P1", kind: "port", templateId: "connector-port", templateWidth: 58 }),
+          data: expect.objectContaining({ id: "port:A/BOARD/P1", label: "", templateLabel: "Connector port", kind: "port", templateId: "connector-port", templateWidth: 58, templatePorts: expect.any(Array), templateTextBoxes: expect.any(Array) }),
           classes: expect.stringContaining("has-template"),
           position: { x: 0, y: 0 }
         })
@@ -126,10 +133,124 @@ describe("web graph adapter", () => {
     expect(elements.edges).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          data: expect.objectContaining({ id: "cable:C-001", netType: "COMM", highlighted: true })
+          data: expect.objectContaining({
+            id: "cable:C-001",
+            netType: "COMM",
+            highlighted: true,
+            cableTemplateId: "connector-cable",
+            sourceConnectorName: "H2*2",
+            targetConnectorName: "RJ45",
+            cableSourceLabel: "H2*2",
+            cableTargetLabel: "RJ45",
+            cableCenterLabel: "C-001",
+            cableTemplateText: "H2*2 RJ45 C-001"
+          }),
+          classes: expect.stringContaining("has-cable-template")
         })
       ])
     );
+  });
+
+  test("embeds edited display template visuals into node backgrounds", () => {
+    const editedGraph: PositionedGraph = {
+      ...graph,
+      displayRules: {
+        templates: {
+          "edited-port": {
+            id: "edited-port",
+            label: "Edited port",
+            width: 188,
+            height: 96,
+            shape: "ellipse",
+            fill: "#ffeecc",
+            stroke: "#123456",
+            strokeWidth: 3,
+            titleFill: "#ddeeff",
+            titleHeight: 28,
+            labelPosition: "title",
+            ports: [
+              {
+                id: "IN_A",
+                connectorName: "Input A",
+                side: "left",
+                offset: 0.5,
+                idLabel: { x: -14, y: -6, fontSize: 7, color: "#172033", align: "center" },
+                connectorLabel: { x: -34, y: 8, fontSize: 8, color: "#172033", align: "center" }
+              }
+            ],
+            textBoxes: [{ id: "name", x: 20, y: 48, width: 100, height: 16, bind: "displayName", fontSize: 10, color: "#334155", align: "center" }]
+          }
+        },
+        nodeTemplates: { "port:A/BOARD/P1": "edited-port" }
+      }
+    };
+
+    const elements = buildCytoscapeElements(editedGraph, {
+      netTypes: new Set(["COMM"]),
+      mode: "detail",
+      highlightedId: null,
+      projection: "detail",
+      activeModule: null,
+      zoom: 1
+    });
+    const node = elements.nodes.find((item) => item.data.id === "port:A/BOARD/P1");
+    const svg = decodeURIComponent(String(node?.data.templateBackground).split(",", 2)[1] ?? "");
+
+    expect(node?.data).toEqual(expect.objectContaining({ templateWidth: 188, templateHeight: 96, templateFill: "#ffeecc", templateShape: "ellipse" }));
+    expect(svg).toContain("<ellipse");
+    expect(svg).toContain('fill="#ffeecc"');
+    expect(svg).toContain('fill="#ddeeff"');
+    expect(svg).toContain("Edited port");
+    expect(svg).toContain("P1");
+    expect(svg).toContain("IN_A");
+    expect(svg).toContain("Input A");
+  });
+
+  test("keeps hierarchy metadata without creating Cytoscape compound nodes", () => {
+    const hierarchicalGraph: PositionedGraph = {
+      ...graph,
+      nodes: [
+        {
+          id: "device:A",
+          type: "device",
+          displayName: "A",
+          position: { x: -100, y: 0 },
+          layout: { layer: "part", module: "MODULE-A", cabinet: "", slot: "", device: "A", board: "", order: 0, reason: "test" }
+        },
+        {
+          id: "board:A/BOARD",
+          type: "board",
+          parent: "device:A",
+          displayName: "BOARD",
+          position: { x: -50, y: 0 },
+          layout: { layer: "part", module: "MODULE-A", cabinet: "", slot: "", device: "A", board: "BOARD", order: 1, reason: "test" }
+        },
+        {
+          id: "port:A/BOARD/P1",
+          type: "port",
+          parent: "board:A/BOARD",
+          displayName: "P1",
+          position: { x: 0, y: 0 },
+          layout: { layer: "part", module: "MODULE-A", cabinet: "", slot: "", device: "A", board: "BOARD", order: 2, reason: "test" }
+        }
+      ]
+    };
+
+    const elements = buildCytoscapeElements(hierarchicalGraph, {
+      netTypes: new Set(["COMM"]),
+      mode: "detail",
+      projection: "detail",
+      activeModule: null,
+      highlightedId: null,
+      zoom: 1
+    });
+    const board = elements.nodes.find((node) => node.data.id === "board:A/BOARD");
+    const port = elements.nodes.find((node) => node.data.id === "port:A/BOARD/P1");
+
+    expect(board?.data.parent).toBeUndefined();
+    expect(port?.data.parent).toBeUndefined();
+    expect(board?.data.parentId).toBe("device:A");
+    expect(port?.data.parentId).toBe("board:A/BOARD");
   });
 
   test("uses layer projection for overview mode and filters route segments", () => {
@@ -183,6 +304,21 @@ describe("web graph adapter", () => {
     );
   });
 
+  test("filters layer projection by selected 0-7 layer ids", () => {
+    const projected = filterGraphForView(graph, {
+      netTypes: new Set(["COMM"]),
+      mode: "overview",
+      projection: "layer",
+      activeModule: null,
+      visibleLayerIds: new Set(["L0"]),
+      highlightedId: null,
+      zoom: 0.5
+    });
+
+    expect(projected.nodes.map((node) => node.id)).toEqual(["port:A/BOARD/P1"]);
+    expect(projected.edges).toEqual([]);
+  });
+
   test("filters detail projection to a selected module subgraph and cross-module cables", () => {
     const projected = filterGraphForView(graph, {
       netTypes: new Set(["COMM"]),
@@ -207,7 +343,7 @@ describe("web graph adapter", () => {
     });
   });
 
-  test("hides port labels in overview and restores them above the zoom threshold", () => {
+  test("keeps template labels inside the shared template background", () => {
     const overview = buildCytoscapeElements(graph, {
       netTypes: new Set(["COMM"]),
       mode: "overview",
@@ -222,7 +358,10 @@ describe("web graph adapter", () => {
     const overviewPort = overview.nodes.find((node) => node.data.id === "port:A/BOARD/P1");
     const detailPort = detailZoomed.nodes.find((node) => node.data.id === "port:A/BOARD/P1");
     expect(overviewPort?.data.label).toBe("");
-    expect(detailPort?.data.label).toBe("P1");
+    expect(detailPort?.data.label).toBe("");
+    const svg = decodeURIComponent(String(detailPort?.data.templateBackground).split(",", 2)[1] ?? "");
+    expect(svg).toContain("Connector port");
+    expect(svg).not.toContain("P1");
   });
 
   test("builds a by-id node index for lookups", () => {

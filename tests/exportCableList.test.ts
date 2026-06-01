@@ -29,8 +29,8 @@ describe("generateCableListRows", () => {
     expect(cableRows[0]).toEqual(
       expect.objectContaining({
         cableId: "C-001",
-        srcDevice: "Device A",
-        dstDevice: "Device B",
+        srcComponent: "Board A",
+        dstComponent: "Board B",
         routeNodes: "PDU_1>TRAY_1",
         routeString: "PDU_1>TRAY_1"
       })
@@ -48,7 +48,7 @@ describe("generateCableListRows", () => {
     const csv = await readFile(csvPath, "utf8");
     expect(csv.charCodeAt(0)).toBe(0xfeff);
     expect(csv.slice(1).split("\n")[0]).toBe(
-      "cable_id,net_type,medium,cable_type,src_device,src_board,src_port,dst_device,dst_board,dst_port,route_nodes,route_string,redundancy_group,remarks"
+      "cable_id,net_type,medium,cable_type,src_component,src_port,dst_component,dst_port,route_nodes,route_string,redundancy_group,remarks"
     );
   });
 
@@ -65,7 +65,7 @@ describe("generateCableListRows", () => {
     const worksheet = workbook.getWorksheet("Cable List");
     expect(worksheet?.getRow(1).font.bold).toBe(true);
     expect(worksheet?.getCell("A1").value).toBe("cable_id");
-    expect(worksheet?.getCell("K2").value).toBe("PDU_1>TRAY_1");
+    expect(worksheet?.getCell("I2").value).toBe("PDU_1>TRAY_1");
   });
 
   test("rejects exports when cable rows do not match logical cable count", () => {

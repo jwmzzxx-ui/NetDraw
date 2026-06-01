@@ -70,6 +70,9 @@ export function mergeProjectRules(input: ProjectRulesInput = {}): ProjectRules {
         global: {
           ...input.normalization?.aliases?.global
         },
+        components: {
+          ...input.normalization?.aliases?.components
+        },
         devices: {
           ...input.normalization?.aliases?.devices
         },
@@ -91,9 +94,10 @@ function mergeStyleRules(input: PartialStyleRules = {}): StyleRules {
   return {
     nodes: {
       base: { ...DEFAULT_STYLE_RULES.nodes.base, ...input.nodes?.base },
-      device: { ...DEFAULT_STYLE_RULES.nodes.device, ...input.nodes?.device },
-      board: { ...DEFAULT_STYLE_RULES.nodes.board, ...input.nodes?.board },
-      port: { ...DEFAULT_STYLE_RULES.nodes.port, ...input.nodes?.port },
+      component: { ...DEFAULT_STYLE_RULES.nodes.component, ...input.nodes?.component },
+      device: { ...DEFAULT_STYLE_RULES.nodes.device!, ...input.nodes?.device },
+      board: { ...DEFAULT_STYLE_RULES.nodes.board!, ...input.nodes?.board },
+      port: { ...DEFAULT_STYLE_RULES.nodes.port!, ...input.nodes?.port },
       "route-node": { ...DEFAULT_STYLE_RULES.nodes["route-node"], ...input.nodes?.["route-node"] }
     },
     netTypes: {

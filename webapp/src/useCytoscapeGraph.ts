@@ -71,7 +71,7 @@ export function useCytoscapeGraph(
         cy.pan(currentPan);
       }
     });
-  }, [elements, graph]);
+  }, [elements, graph, stylesheet]);
 
   return { containerRef, cyRef };
 }

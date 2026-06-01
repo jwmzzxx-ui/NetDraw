@@ -2,7 +2,9 @@ export const NET_TYPES = ["AC", "DC", "COMM", "SIGNAL", "SAFETY"] as const;
 
 export type NetType = (typeof NET_TYPES)[number];
 
-export type LayerType =
+export type LayerId = "L0" | "L1" | "L2" | "L3" | "L4";
+
+export type LegacyLayerType =
   | "part"
   | "breakout"
   | "interface"
@@ -11,13 +13,13 @@ export type LayerType =
   | "ipc"
   | "route";
 
+export type LayerType = LegacyLayerType | LayerId | string;
+
 export interface InterfaceRow {
   rowId: string;
-  srcDevice: string;
-  srcBoard: string;
+  srcComponent?: string;
   srcPort: string;
-  dstDevice: string;
-  dstBoard: string;
+  dstComponent?: string;
   dstPort: string;
   netType: NetType;
   medium: string;
@@ -28,6 +30,10 @@ export interface InterfaceRow {
   direction?: string;
   remarks?: string;
   rawRecord?: Record<string, string | undefined>;
+  srcDevice?: string;
+  srcBoard?: string;
+  dstDevice?: string;
+  dstBoard?: string;
 }
 
 export interface NormalizedName {
@@ -39,12 +45,14 @@ export interface NormalizedName {
 
 export interface NormalizedInterfaceRow extends InterfaceRow {
   normalized: {
-    srcDevice: NormalizedName;
-    srcBoard: NormalizedName;
+    srcComponent: NormalizedName;
     srcPort: NormalizedName;
-    dstDevice: NormalizedName;
-    dstBoard: NormalizedName;
+    dstComponent: NormalizedName;
     dstPort: NormalizedName;
+    srcDevice?: NormalizedName;
+    srcBoard?: NormalizedName;
+    dstDevice?: NormalizedName;
+    dstBoard?: NormalizedName;
   };
 }
 
@@ -60,27 +68,59 @@ export interface NormalizationLog {
 }
 
 export interface ComponentRow {
-  nodeId: string;
+  componentId?: string;
   componentType: string;
+  componentName?: string;
+  pdmCode?: string;
+  /** @deprecated compatibility input alias for pdmCode */
+  componentCode?: string;
   layer?: LayerType;
+  layerId?: LayerId;
+  layerName?: string;
   module?: string;
   cabinet?: string;
   slot?: string;
   order?: string;
   displayName?: string;
+  ports?: GraphPort[];
   templateId?: string;
   templateVariant?: string;
   templateParams?: string;
   remarks?: string;
+  nodeId?: string;
+}
+
+export interface GraphPort {
+  portId: string;
+  connectorName?: string;
+  displayName?: string;
+  normalizedName?: string;
+  side?: TemplateAnchorSide;
+  offset?: number;
+  x?: number;
+  y?: number;
+  metadata?: Record<string, string | undefined>;
 }
 
 export interface GraphNode {
   id: string;
-  type: "device" | "board" | "port" | "route-node";
-  parent?: string;
+  type: "component" | "route-node" | "device" | "board" | "port";
   layer?: LayerType;
   displayName: string;
+  componentId?: string;
+  componentName?: string;
+  pdmCode?: string;
+  /** @deprecated compatibility input alias for pdmCode */
+  componentCode?: string;
+  layerId?: LayerId;
+  layerName?: string;
+  module?: string;
+  cabinet?: string;
+  slot?: string;
+  order?: string;
+  ports?: GraphPort[];
   metadata?: Record<string, string | undefined>;
+  parent?: string;
 }
 
 export interface GraphEdge {
@@ -88,6 +128,8 @@ export interface GraphEdge {
   type: "logical-cable" | "route-segment";
   source: string;
   target: string;
+  sourcePortId?: string;
+  targetPortId?: string;
   cableId: string;
   cableType?: string;
   netType: string;
@@ -135,8 +177,10 @@ export interface ModelDiagnostic {
 export interface CableTrace {
   cableId: string;
   logicalCable: GraphEdge;
-  sourcePort?: GraphNode;
-  targetPort?: GraphNode;
+  sourceComponent?: GraphNode;
+  targetComponent?: GraphNode;
+  sourcePort?: GraphPort;
+  targetPort?: GraphPort;
   routeSegments: GraphEdge[];
   routeNodeIds: string[];
 }
@@ -146,11 +190,9 @@ export interface CableListRow {
   netType: string;
   medium: string;
   cableType: string;
-  srcDevice: string;
-  srcBoard: string;
+  srcComponent: string;
   srcPort: string;
-  dstDevice: string;
-  dstBoard: string;
+  dstComponent: string;
   dstPort: string;
   routeNodes: string;
   routeString: string;
@@ -267,13 +309,42 @@ export interface Position {
 export type TemplateShape = "round-rectangle" | "rectangle" | "hexagon" | "ellipse";
 export type TemplateAnchorSide = "left" | "right" | "top" | "bottom" | "center";
 
-export interface TemplateAnchor {
+export interface TemplatePort {
   id: string;
+  connectorName?: string;
   label?: string;
   side: TemplateAnchorSide;
   offset: number;
   x?: number;
   y?: number;
+  boxWidth?: number;
+  boxHeight?: number;
+  idLabel?: TemplatePortLabel;
+  connectorLabel?: TemplatePortLabel;
+}
+
+export type TemplateAnchor = TemplatePort;
+
+export interface TemplateTextBox {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  bind: string;
+  fallback?: string;
+  fontSize?: number;
+  color?: string;
+  align?: "left" | "center" | "right";
+}
+
+export interface TemplatePortLabel {
+  x: number;
+  y: number;
+  fontSize: number;
+  color?: string;
+  align?: "left" | "center" | "right";
+  snapSide?: TemplateAnchorSide | "free";
 }
 
 export interface DisplayTemplate {
@@ -289,6 +360,8 @@ export interface DisplayTemplate {
   titleColor?: string;
   titleHeight?: number;
   labelPosition?: "center" | "title" | "below";
+  ports?: TemplatePort[];
+  textBoxes?: TemplateTextBox[];
   anchors?: TemplateAnchor[];
 }
 
@@ -302,13 +375,33 @@ export interface DisplayTemplateOverride {
   titleColor?: string;
   titleHeight?: number;
   label?: string;
+  ports?: TemplatePort[];
+  textBoxes?: TemplateTextBox[];
   anchors?: TemplateAnchor[];
+}
+
+export interface CableTemplate {
+  id: string;
+  label: string;
+  stroke: string;
+  strokeWidth: number;
+  lineStyle?: "solid" | "dashed";
+  endpointLabels?: {
+    sourcePort: TemplateTextBox;
+    targetPort: TemplateTextBox;
+  };
+  cableLabel?: TemplateTextBox;
+  textBoxes?: TemplateTextBox[];
 }
 
 export interface DisplayRules {
   templates: Record<string, DisplayTemplate>;
+  cableTemplates?: Record<string, CableTemplate>;
+  pdmCodeTemplates?: Record<string, string>;
   nodeTemplates?: Record<string, string>;
   kindTemplates?: Partial<Record<GraphNode["type"], string>>;
+  cableKindTemplates?: Partial<Record<GraphEdge["type"], string>>;
+  edgeTemplates?: Record<string, string>;
   templateOverrides?: Record<string, DisplayTemplateOverride>;
 }
 
@@ -336,11 +429,17 @@ export interface PositionedNode extends GraphNode {
   position: Position;
   layout: {
     layer: string;
+    layerId?: LayerId;
+    layerName?: string;
     module: string;
     cabinet: string;
     slot: string;
     device: string;
     board: string;
+    component?: string;
+    pdmCode?: string;
+    /** @deprecated compatibility alias for pdmCode */
+    componentCode?: string;
     order: number;
     reason: string;
   };

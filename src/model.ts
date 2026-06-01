@@ -26,8 +26,10 @@ export function buildCanonicalGraph(rows: InterfaceRow[], resolvedRoutes: Resolv
     edges.push({
       id: `cable:${toSlug(cableId)}`,
       type: "logical-cable",
-      source: src.portId,
-      target: dst.portId,
+      source: src.componentId,
+      target: dst.componentId,
+      sourcePortId: src.port.portId,
+      targetPortId: dst.port.portId,
       cableId,
       cableType: row.cableType,
       netType: row.netType,
@@ -104,8 +106,10 @@ export function traceCable(graph: CanonicalGraph, cableId: string): CableTrace |
   return {
     cableId,
     logicalCable,
-    sourcePort: nodeById(graph, indexes, logicalCable.source),
-    targetPort: nodeById(graph, indexes, logicalCable.target),
+    sourceComponent: nodeById(graph, indexes, logicalCable.source),
+    targetComponent: nodeById(graph, indexes, logicalCable.target),
+    sourcePort: nodeById(graph, indexes, logicalCable.source)?.ports?.find((port) => port.portId === logicalCable.sourcePortId),
+    targetPort: nodeById(graph, indexes, logicalCable.target)?.ports?.find((port) => port.portId === logicalCable.targetPortId),
     routeSegments,
     routeNodeIds: routeNodeIdsFrom(logicalCable, routeSegments)
   };
@@ -146,36 +150,30 @@ function addEndpoint(
   nodes: Map<string, GraphNode>,
   row: InterfaceRow,
   side: "src" | "dst"
-): { deviceId: string; boardId: string; portId: string } {
-  const device = readEndpointName(row, `${side}Device`);
-  const board = readEndpointName(row, `${side}Board`);
+): { componentId: string; port: NonNullable<GraphNode["ports"]>[number] } {
+  const component = readEndpointName(row, `${side}Component`);
   const port = readEndpointName(row, `${side}Port`);
-  const deviceId = `device:${device.slug}`;
-  const boardId = `board:${device.slug}/${board.slug}`;
-  const portId = `port:${device.slug}/${board.slug}/${port.slug}`;
+  const componentId = `component:${component.slug}`;
 
   addNode(nodes, {
-    id: deviceId,
-    type: "device",
-    displayName: device.displayName,
-    metadata: nameMetadata(device)
-  });
-  addNode(nodes, {
-    id: boardId,
-    type: "board",
-    parent: deviceId,
-    displayName: board.displayName,
-    metadata: nameMetadata(board)
-  });
-  addNode(nodes, {
-    id: portId,
-    type: "port",
-    parent: boardId,
-    displayName: port.displayName,
-    metadata: nameMetadata(port)
+    id: componentId,
+    type: "component",
+    displayName: component.displayName,
+    componentId: component.normalizedName,
+    componentName: component.displayName,
+    pdmCode: component.normalizedName,
+    componentCode: component.normalizedName,
+    ports: [graphPortFromName(port)],
+    metadata: {
+      ...nameMetadata(component),
+      componentId: component.normalizedName,
+      componentName: component.displayName,
+      pdmCode: component.normalizedName,
+      componentCode: component.normalizedName
+    }
   });
 
-  return { deviceId, boardId, portId };
+  return { componentId, port: graphPortFromName(port) };
 }
 
 function addNode(nodes: Map<string, GraphNode>, node: GraphNode): void {
@@ -186,20 +184,41 @@ function addNode(nodes: Map<string, GraphNode>, node: GraphNode): void {
   }
 
   existing.metadata = mergeMetadata(existing.metadata, node.metadata);
+  existing.ports = mergePorts(existing.ports, node.ports);
+  existing.componentId = existing.componentId ?? node.componentId;
+  existing.componentName = existing.componentName ?? node.componentName;
+  existing.pdmCode = existing.pdmCode ?? node.pdmCode;
+  existing.componentCode = existing.componentCode ?? node.componentCode;
 }
 
-function readEndpointName(row: InterfaceRow, field: keyof NormalizedInterfaceRow["normalized"]): NormalizedName {
+type EndpointField = "srcComponent" | "srcPort" | "dstComponent" | "dstPort";
+
+function readEndpointName(row: InterfaceRow, field: EndpointField): NormalizedName {
   if (isNormalizedInterfaceRow(row)) {
     return row.normalized[field];
   }
 
-  const originalName = String(row[field]).trim();
+  const originalName = String(readRawEndpointValue(row, field)).trim();
   return {
     originalName,
     normalizedName: originalName,
     displayName: originalName,
     slug: toSlug(originalName)
   };
+}
+
+function readRawEndpointValue(row: InterfaceRow, field: EndpointField): string {
+  if (field === "srcComponent") {
+    return row.srcComponent ?? legacyComponentName(row.srcDevice, row.srcBoard);
+  }
+  if (field === "dstComponent") {
+    return row.dstComponent ?? legacyComponentName(row.dstDevice, row.dstBoard);
+  }
+  return String(row[field] ?? "");
+}
+
+function legacyComponentName(device: string | undefined, board: string | undefined): string {
+  return [device, board].filter(Boolean).join("/") || device || board || "";
 }
 
 function isNormalizedInterfaceRow(row: InterfaceRow): row is NormalizedInterfaceRow {
@@ -211,6 +230,34 @@ function nameMetadata(name: NormalizedName): Record<string, string> {
     originalNames: name.originalName,
     normalizedName: name.normalizedName
   };
+}
+
+function graphPortFromName(port: NormalizedName): NonNullable<GraphNode["ports"]>[number] {
+  return {
+    portId: port.normalizedName,
+    displayName: port.displayName,
+    normalizedName: port.normalizedName,
+    connectorName: port.displayName,
+    metadata: {
+      ...nameMetadata(port),
+      source: "interface"
+    }
+  };
+}
+
+function mergePorts(
+  existing: GraphNode["ports"] | undefined,
+  next: GraphNode["ports"] | undefined
+): GraphNode["ports"] | undefined {
+  const byId = new Map<string, NonNullable<GraphNode["ports"]>[number]>();
+  for (const port of existing ?? []) {
+    byId.set(port.portId, port);
+  }
+  for (const port of next ?? []) {
+    const current = byId.get(port.portId);
+    byId.set(port.portId, current ? { ...current, ...port, metadata: mergeMetadata(current.metadata, port.metadata) } : port);
+  }
+  return byId.size ? Array.from(byId.values()) : undefined;
 }
 
 function mergeMetadata(
@@ -267,11 +314,6 @@ function buildGraphIndexesAndDiagnostics(
     }
     byId[node.id] = { kind: "node", index };
 
-    if (node.parent) {
-      const children = byParent[node.parent] ?? [];
-      children.push(node.id);
-      byParent[node.parent] = children;
-    }
   });
 
   edges.forEach((edge, index) => {
@@ -294,17 +336,6 @@ function buildGraphIndexesAndDiagnostics(
     }
     byCableId[edge.cableId] = cableIndex;
   });
-
-  for (const node of nodes) {
-    if (node.parent && !byId[node.parent]) {
-      diagnostics.push({
-        code: "MISSING_PARENT",
-        severity: "error",
-        nodeId: node.id,
-        message: `Node ${node.id} references missing parent ${node.parent}`
-      });
-    }
-  }
 
   for (const edge of edges) {
     for (const endpoint of [edge.source, edge.target]) {

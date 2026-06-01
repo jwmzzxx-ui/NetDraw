@@ -1,7 +1,8 @@
 import { useEffect, useId, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { Cable, Download, Eye, Filter, Gauge, GitBranch, Layers3, Search, TriangleAlert, Upload } from "lucide-react";
-import { DEFAULT_DISPLAY_RULES, mergeDisplayRules, resolveDisplayTemplate } from "../../src/displayRules.js";
-import type { DisplayRules, DisplayTemplateOverride, GraphEdge, PositionedGraph, Position, TemplateAnchor } from "../../src/types.js";
+import { buildTemplateBackgroundDataUri, DEFAULT_DISPLAY_RULES, mergeDisplayRules, resolveCableTemplate, resolveDisplayTemplate } from "../../src/displayRules.js";
+import { CANONICAL_LAYERS } from "../../src/layers.js";
+import type { CableTemplate, DisplayRules, DisplayTemplate, DisplayTemplateOverride, GraphEdge, GraphNode, PositionedGraph, Position, TemplatePort, TemplatePortLabel, TemplateShape, TemplateTextBox } from "../../src/types.js";
 import type { ImportUploadFiles } from "./apiClient.js";
 import { createBenchmarkMetrics, formatMs } from "./benchmark.js";
 import { getGraphStats } from "./graphAdapter.js";
@@ -37,6 +38,7 @@ interface NetDrawWorkbenchProps {
 
 const netTypeLabels = ["AC", "DC", "COMM", "SIGNAL", "SAFETY"];
 type TemplateMode = "layer012" | "handdrawn";
+type WorkspaceView = "graph" | "displayTemplates";
 
 interface TemplateNodeSpec {
   kind: "device" | "board" | "port";
@@ -118,6 +120,8 @@ export function NetDrawWorkbench({
   const [showImportPanel, setShowImportPanel] = useState(false);
   const [showTemplateWizard, setShowTemplateWizard] = useState(false);
   const [templateMode, setTemplateMode] = useState<TemplateMode>("layer012");
+  const [activeWorkspaceView, setActiveWorkspaceView] = useState<WorkspaceView>("graph");
+  const [selectedDisplayTemplateId, setSelectedDisplayTemplateId] = useState("board-panel");
   const [generatedTemplates, setGeneratedTemplates] = useState<GeneratedTemplates | null>(null);
   const [interfaceFile, setInterfaceFile] = useState<File | null>(null);
   const [routesFile, setRoutesFile] = useState<File | null>(null);
@@ -132,6 +136,11 @@ export function NetDrawWorkbench({
     setEditableDisplayRules(mergeDisplayRules(positionedGraph.displayRules));
     setShowDisplayPatch(false);
   }, [positionedGraph]);
+  useEffect(() => {
+    if (!editableDisplayRules.templates[selectedDisplayTemplateId] && !editableDisplayRules.cableTemplates?.[selectedDisplayTemplateId]) {
+      setSelectedDisplayTemplateId(Object.keys(editableDisplayRules.templates)[0] ?? "plain-device");
+    }
+  }, [editableDisplayRules.templates, editableDisplayRules.cableTemplates, selectedDisplayTemplateId]);
   const renderedGraph = useMemo(() => ({
     ...applyOverridePositions(positionedGraph, overridePositions, edgeBendPoints),
     displayRules: editableDisplayRules
@@ -149,6 +158,7 @@ export function NetDrawWorkbench({
     projection: filters.projection,
     activeModule: filters.activeModule,
     minVisibleLayer: filters.minVisibleLayer,
+    visibleLayerIds: filters.visibleLayerIds,
     highlightedId: filters.highlightedId,
     zoom: filters.zoom
   };
@@ -171,6 +181,7 @@ export function NetDrawWorkbench({
   );
   const moduleOptions = filters.availableModules;
   const selectedTemplate = selectedNode ? resolveDisplayTemplate(selectedNode, editableDisplayRules) : null;
+  const selectedCableTemplate = selectedEdge ? resolveCableTemplate(selectedEdge, editableDisplayRules) : null;
 
   const addBendPoint = () => {
     if (!selectedEdge) {
@@ -187,30 +198,51 @@ export function NetDrawWorkbench({
     setGeneratedTemplates(buildGeneratedTemplates(templateMode));
   };
 
-  const assignSelectedTemplate = (templateId: string) => {
-    if (!selectedNode) {
-      return;
-    }
+  const openTemplateWizard = (mode: TemplateMode) => {
+    setTemplateMode(mode);
+    setGeneratedTemplates(null);
+    setShowTemplateWizard(true);
+  };
+
+  const assignNodeTemplate = (node: PositionedGraph["nodes"][number], templateId: string) => {
+    const pdmCode = node.pdmCode ?? node.metadata?.pdmCode ?? node.componentCode ?? node.metadata?.componentCode;
     setEditableDisplayRules((current) => ({
       ...current,
-      nodeTemplates: {
-        ...current.nodeTemplates,
-        [selectedNode.id]: templateId
+      ...(node.type === "component" && pdmCode
+        ? {
+            pdmCodeTemplates: {
+              ...current.pdmCodeTemplates,
+              [pdmCode]: templateId
+            }
+          }
+        : {
+            nodeTemplates: {
+              ...current.nodeTemplates,
+              [node.id]: templateId
+            }
+          })
+    }));
+    setShowDisplayPatch(false);
+  };
+
+  const assignEdgeTemplate = (edgeId: string, templateId: string) => {
+    setEditableDisplayRules((current) => ({
+      ...current,
+      edgeTemplates: {
+        ...current.edgeTemplates,
+        [edgeId]: templateId
       }
     }));
     setShowDisplayPatch(false);
   };
 
-  const updateSelectedTemplateOverride = (patch: DisplayTemplateOverride) => {
-    if (!selectedNode) {
-      return;
-    }
+  const updateTemplate = (templateId: string, patch: Partial<DisplayTemplate>) => {
     setEditableDisplayRules((current) => ({
       ...current,
-      templateOverrides: {
-        ...current.templateOverrides,
-        [selectedNode.id]: {
-          ...current.templateOverrides?.[selectedNode.id],
+      templates: {
+        ...current.templates,
+        [templateId]: {
+          ...current.templates[templateId],
           ...patch
         }
       }
@@ -218,12 +250,73 @@ export function NetDrawWorkbench({
     setShowDisplayPatch(false);
   };
 
-  const updateSelectedAnchor = (anchorIndex: number, patch: Partial<TemplateAnchor>) => {
-    if (!selectedNode || !selectedTemplate) {
+  const updateTemplatePort = (templateId: string, portIndex: number, patch: Partial<TemplatePort>) => {
+    const template = editableDisplayRules.templates[templateId];
+    if (!template) {
       return;
     }
-    const anchors = selectedTemplate.anchors.map((anchor, index) => (index === anchorIndex ? { ...anchor, ...patch } : anchor));
-    updateSelectedTemplateOverride({ anchors });
+    const ports = (template.ports ?? template.anchors ?? []).map((port, index) => (index === portIndex ? { ...port, ...patch } : port));
+    updateTemplate(templateId, { ports });
+  };
+
+  const addTemplatePort = (templateId: string) => {
+    const template = editableDisplayRules.templates[templateId];
+    const ports = template?.ports ?? template?.anchors ?? [];
+    updateTemplate(templateId, { ports: [...ports, { id: `PORT_${ports.length + 1}`, label: `PORT_${ports.length + 1}`, side: "right", offset: 0.5 }] });
+  };
+
+  const deleteTemplatePort = (templateId: string, portIndex: number) => {
+    const template = editableDisplayRules.templates[templateId];
+    const ports = template?.ports ?? template?.anchors ?? [];
+    updateTemplate(templateId, { ports: ports.filter((_, index) => index !== portIndex) });
+  };
+
+  const updateTemplateTextBox = (templateId: string, boxIndex: number, patch: Partial<TemplateTextBox>) => {
+    const template = editableDisplayRules.templates[templateId];
+    const boxes = template?.textBoxes ?? [];
+    updateTemplate(templateId, { textBoxes: boxes.map((box, index) => (index === boxIndex ? { ...box, ...patch } : box)) });
+  };
+
+  const addTemplateTextBox = (templateId: string) => {
+    const template = editableDisplayRules.templates[templateId];
+    const boxes = template?.textBoxes ?? [];
+    updateTemplate(templateId, { textBoxes: [...boxes, { id: `text_${boxes.length + 1}`, x: 10, y: 54, width: 120, height: 16, bind: "displayName", fallback: "", fontSize: 10, color: "#172033", align: "center" }] });
+  };
+
+  const deleteTemplateTextBox = (templateId: string, boxIndex: number) => {
+    const template = editableDisplayRules.templates[templateId];
+    updateTemplate(templateId, { textBoxes: (template?.textBoxes ?? []).filter((_, index) => index !== boxIndex) });
+  };
+
+  const updateCableTemplate = (templateId: string, patch: Partial<CableTemplate>) => {
+    setEditableDisplayRules((current) => ({
+      ...current,
+      cableTemplates: {
+        ...current.cableTemplates,
+        [templateId]: {
+          ...current.cableTemplates?.[templateId],
+          ...patch
+        } as CableTemplate
+      }
+    }));
+    setShowDisplayPatch(false);
+  };
+
+  const updateCableTextBox = (templateId: string, boxIndex: number, patch: Partial<TemplateTextBox>) => {
+    const template = editableDisplayRules.cableTemplates?.[templateId];
+    const boxes = template?.textBoxes ?? [];
+    updateCableTemplate(templateId, { textBoxes: boxes.map((box, index) => (index === boxIndex ? { ...box, ...patch } : box)) });
+  };
+
+  const addCableTextBox = (templateId: string) => {
+    const template = editableDisplayRules.cableTemplates?.[templateId];
+    const boxes = template?.textBoxes ?? [];
+    updateCableTemplate(templateId, { textBoxes: [...boxes, { id: `cable_text_${boxes.length + 1}`, x: 0, y: -14, width: 90, height: 16, bind: "cableId", fallback: "", fontSize: 10, color: "#334155", align: "center" }] });
+  };
+
+  const deleteCableTextBox = (templateId: string, boxIndex: number) => {
+    const template = editableDisplayRules.cableTemplates?.[templateId];
+    updateCableTemplate(templateId, { textBoxes: (template?.textBoxes ?? []).filter((_, index) => index !== boxIndex) });
   };
 
   const submitImport = async (event: FormEvent) => {
@@ -262,6 +355,16 @@ export function NetDrawWorkbench({
             <h1>NetDraw</h1>
             <span>{projectName ? `Project: ${projectName}` : "Physical network graph workbench"}</span>
           </div>
+        </div>
+        <div className="mode-switch workspace-switch" aria-label="Workspace view">
+          <button type="button" aria-pressed={activeWorkspaceView === "graph"} onClick={() => setActiveWorkspaceView("graph")}>
+            <Eye size={15} aria-hidden="true" />
+            图纸视图
+          </button>
+          <button type="button" aria-pressed={activeWorkspaceView === "displayTemplates"} onClick={() => setActiveWorkspaceView("displayTemplates")}>
+            <Layers3 size={15} aria-hidden="true" />
+            显示模板
+          </button>
         </div>
         <div className="mode-switch" aria-label="View mode">
           <button type="button" aria-pressed={filters.mode === "overview"} onClick={() => filters.setMode("overview")}>
@@ -309,6 +412,27 @@ export function NetDrawWorkbench({
         </div>
       </header>
 
+      {activeWorkspaceView === "displayTemplates" ? (
+        <DisplayTemplateWorkspace
+          displayRules={editableDisplayRules}
+          selectedTemplateId={selectedDisplayTemplateId}
+          displayPatch={displayPatch}
+          showDisplayPatch={showDisplayPatch}
+          onSelectTemplate={setSelectedDisplayTemplateId}
+          onUpdateTemplate={updateTemplate}
+          onUpdatePort={updateTemplatePort}
+          onAddPort={addTemplatePort}
+          onDeletePort={deleteTemplatePort}
+          onUpdateTextBox={updateTemplateTextBox}
+          onAddTextBox={addTemplateTextBox}
+          onDeleteTextBox={deleteTemplateTextBox}
+          onUpdateCableTemplate={updateCableTemplate}
+          onUpdateCableTextBox={updateCableTextBox}
+          onAddCableTextBox={addCableTextBox}
+          onDeleteCableTextBox={deleteCableTextBox}
+          onShowDisplayPatch={() => setShowDisplayPatch(true)}
+        />
+      ) : (
       <section className="workspace">
         <aside className="sidebar">
           {onImportData ? (
@@ -399,41 +523,50 @@ export function NetDrawWorkbench({
               ))}
             </div>
             <p className="active-count">{filters.activeNetTypes.size} active cable types</p>
+            <div className="layer-filter-list" aria-label="Visible drawing layers">
+              {CANONICAL_LAYERS.map((layer) => (
+                <label key={layer.id} className="check-row">
+                  <input
+                    type="checkbox"
+                    aria-label={`Layer ${layer.id}`}
+                    checked={filters.visibleLayerIds.has(layer.id)}
+                    onChange={() => filters.toggleLayerId(layer.id)}
+                  />
+                  <span className="layer-pill">{layer.id}</span>
+                  {layer.label}
+                </label>
+              ))}
+            </div>
           </section>
 
           <section className="panel template-panel">
             <h2>
               <Layers3 size={15} aria-hidden="true" />
-              Drawing templates
+              绘制模板
             </h2>
-            <button type="button" className="tool-button panel-action" onClick={() => setShowTemplateWizard((current) => !current)}>
-              <Layers3 size={15} aria-hidden="true" />
-              Drawing templates
-            </button>
+            <div className="template-entry-list">
+              <button
+                type="button"
+                className="tool-button panel-action"
+                aria-pressed={showTemplateWizard && templateMode === "layer012"}
+                onClick={() => openTemplateWizard("layer012")}
+              >
+                <Layers3 size={15} aria-hidden="true" />
+                0/1/2层模板
+              </button>
+              <button
+                type="button"
+                className="tool-button panel-action"
+                aria-pressed={showTemplateWizard && templateMode === "handdrawn"}
+                onClick={() => openTemplateWizard("handdrawn")}
+              >
+                <GitBranch size={15} aria-hidden="true" />
+                手绘模板
+              </button>
+            </div>
             {showTemplateWizard ? (
               <div className="template-wizard">
-                <div className="mode-switch template-mode-switch" aria-label="Template mode">
-                  <button
-                    type="button"
-                    aria-pressed={templateMode === "layer012"}
-                    onClick={() => {
-                      setTemplateMode("layer012");
-                      setGeneratedTemplates(null);
-                    }}
-                  >
-                    0/1/2层模板
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={templateMode === "handdrawn"}
-                    onClick={() => {
-                      setTemplateMode("handdrawn");
-                      setGeneratedTemplates(null);
-                    }}
-                  >
-                    手绘模板
-                  </button>
-                </div>
+                <p className="active-count">{templateMode === "handdrawn" ? "手绘模板会输出固定坐标和显示模板规则。" : "0/1/2层模板会输出部件、分线板、接口板三层数据。"}</p>
                 <button type="button" className="primary-button" onClick={generateTemplates}>
                   Generate templates
                 </button>
@@ -598,6 +731,25 @@ export function NetDrawWorkbench({
                 <GitBranch size={15} aria-hidden="true" />
                 Add bend point
               </button>
+              {selectedCableTemplate ? (
+                <section className="template-summary">
+                  <span className="object-type">Cable template</span>
+                  <label className="select-row">
+                    Template
+                    <select
+                      aria-label="Cable display template"
+                      value={selectedCableTemplate.templateId}
+                      onChange={(event) => assignEdgeTemplate(selectedEdge.id, event.target.value)}
+                    >
+                      {Object.values(editableDisplayRules.cableTemplates ?? {}).map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </section>
+              ) : null}
             </div>
           ) : selectedNode ? (
             <div className="inspector-body">
@@ -606,14 +758,14 @@ export function NetDrawWorkbench({
               {selectedNode.layout.module ? <p>Module: {selectedNode.layout.module}</p> : null}
               <p>{selectedNode.layout.reason}</p>
               {selectedTemplate ? (
-                <section className="template-editor">
-                  <h3>Display template</h3>
+                <section className="template-summary">
+                  <span className="object-type">Display template</span>
                   <label className="select-row">
                     Template
                     <select
-                      aria-label="Display template"
+                      aria-label="Node display template"
                       value={selectedTemplate.templateId}
-                      onChange={(event) => assignSelectedTemplate(event.target.value)}
+                      onChange={(event) => assignNodeTemplate(selectedNode, event.target.value)}
                     >
                       {Object.values(editableDisplayRules.templates).map((template) => (
                         <option key={template.id} value={template.id}>
@@ -622,94 +774,17 @@ export function NetDrawWorkbench({
                       ))}
                     </select>
                   </label>
-                  <div className="template-editor-grid">
-                    <label>
-                      Width
-                      <input
-                        aria-label="Template width"
-                        type="number"
-                        min="16"
-                        value={selectedTemplate.width}
-                        onChange={(event) => updateSelectedTemplateOverride({ width: Number(event.target.value) })}
-                      />
-                    </label>
-                    <label>
-                      Height
-                      <input
-                        aria-label="Template height"
-                        type="number"
-                        min="16"
-                        value={selectedTemplate.height}
-                        onChange={(event) => updateSelectedTemplateOverride({ height: Number(event.target.value) })}
-                      />
-                    </label>
-                    <label>
-                      Fill
-                      <input
-                        aria-label="Template fill"
-                        type="color"
-                        value={selectedTemplate.fill}
-                        onChange={(event) => updateSelectedTemplateOverride({ fill: event.target.value })}
-                      />
-                    </label>
-                    <label>
-                      Stroke
-                      <input
-                        aria-label="Template stroke"
-                        type="color"
-                        value={selectedTemplate.stroke}
-                        onChange={(event) => updateSelectedTemplateOverride({ stroke: event.target.value })}
-                      />
-                    </label>
-                  </div>
-                  <label className="template-label-field">
-                    Label
-                    <input
-                      aria-label="Template label"
-                      value={selectedTemplate.label}
-                      onChange={(event) => updateSelectedTemplateOverride({ label: event.target.value })}
-                    />
-                  </label>
-                  {selectedTemplate.anchors.length > 0 ? (
-                    <div className="anchor-editor-list">
-                      {selectedTemplate.anchors.map((anchor, index) => (
-                        <div key={`${anchor.id}-${index}`} className="anchor-editor-row">
-                          <input
-                            aria-label={`Anchor ${index + 1} label`}
-                            value={anchor.label ?? anchor.id}
-                            onChange={(event) => updateSelectedAnchor(index, { label: event.target.value })}
-                          />
-                          <select
-                            aria-label={`Anchor ${index + 1} side`}
-                            value={anchor.side}
-                            onChange={(event) => updateSelectedAnchor(index, { side: event.target.value as TemplateAnchor["side"] })}
-                          >
-                            <option value="left">left</option>
-                            <option value="right">right</option>
-                            <option value="top">top</option>
-                            <option value="bottom">bottom</option>
-                            <option value="center">center</option>
-                          </select>
-                          <input
-                            aria-label={`Anchor ${index + 1} offset`}
-                            type="number"
-                            min="0"
-                            max="1"
-                            step="0.05"
-                            value={anchor.offset}
-                            onChange={(event) => updateSelectedAnchor(index, { offset: Number(event.target.value) })}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                  <button type="button" className="tool-button panel-action" onClick={() => setShowDisplayPatch(true)}>
-                    <Download size={15} aria-hidden="true" />
-                    Export display rules
+                  <button
+                    type="button"
+                    className="tool-button panel-action"
+                    onClick={() => {
+                      setSelectedDisplayTemplateId(selectedTemplate.templateId);
+                      setActiveWorkspaceView("displayTemplates");
+                    }}
+                  >
+                    <Layers3 size={15} aria-hidden="true" />
+                    编辑显示模板
                   </button>
-                  {showDisplayPatch ? (
-                    <textarea className="override-output" aria-label="Display rules JSON" readOnly value={displayPatch} />
-                  ) : null}
                 </section>
               ) : null}
             </div>
@@ -721,8 +796,432 @@ export function NetDrawWorkbench({
           )}
         </aside>
       </section>
+      )}
     </main>
   );
+}
+
+function DisplayTemplateWorkspace({
+  displayRules,
+  selectedTemplateId,
+  displayPatch,
+  showDisplayPatch,
+  onSelectTemplate,
+  onUpdateTemplate,
+  onUpdatePort,
+  onAddPort,
+  onDeletePort,
+  onUpdateTextBox,
+  onAddTextBox,
+  onDeleteTextBox,
+  onUpdateCableTemplate,
+  onUpdateCableTextBox,
+  onAddCableTextBox,
+  onDeleteCableTextBox,
+  onShowDisplayPatch
+}: {
+  displayRules: DisplayRules;
+  selectedTemplateId: string;
+  displayPatch: string;
+  showDisplayPatch: boolean;
+  onSelectTemplate: (templateId: string) => void;
+  onUpdateTemplate: (templateId: string, patch: Partial<DisplayTemplate>) => void;
+  onUpdatePort: (templateId: string, portIndex: number, patch: Partial<TemplatePort>) => void;
+  onAddPort: (templateId: string) => void;
+  onDeletePort: (templateId: string, portIndex: number) => void;
+  onUpdateTextBox: (templateId: string, boxIndex: number, patch: Partial<TemplateTextBox>) => void;
+  onAddTextBox: (templateId: string) => void;
+  onDeleteTextBox: (templateId: string, boxIndex: number) => void;
+  onUpdateCableTemplate: (templateId: string, patch: Partial<CableTemplate>) => void;
+  onUpdateCableTextBox: (templateId: string, boxIndex: number, patch: Partial<TemplateTextBox>) => void;
+  onAddCableTextBox: (templateId: string) => void;
+  onDeleteCableTextBox: (templateId: string, boxIndex: number) => void;
+  onShowDisplayPatch: () => void;
+}) {
+  const templates = Object.values(displayRules.templates);
+  const cableTemplates = Object.values(displayRules.cableTemplates ?? {});
+  const selectedTemplate = displayRules.templates[selectedTemplateId] ?? templates[0] ?? DEFAULT_DISPLAY_RULES.templates["plain-device"];
+  const selectedCableTemplate = displayRules.cableTemplates?.[selectedTemplateId] ?? null;
+  const selectedKind = selectedCableTemplate ? "cable" : "node";
+
+  return (
+    <section className="display-template-workspace">
+      <aside className="template-library-panel">
+        <div className="template-page-header">
+          <h2>显示模板</h2>
+          <span className="active-count">{templates.length + cableTemplates.length} templates</span>
+        </div>
+        <h3 className="template-library-heading">节点模板</h3>
+        <div className="template-library-list">
+          {templates.map((template) => (
+            <button
+              key={template.id}
+              type="button"
+              className="template-library-item"
+              aria-pressed={template.id === selectedTemplate.id}
+              onClick={() => onSelectTemplate(template.id)}
+            >
+              <span>{template.label}</span>
+              <small>{template.id}</small>
+            </button>
+          ))}
+        </div>
+        <h3 className="template-library-heading">线缆模板</h3>
+        <div className="template-library-list">
+          {cableTemplates.map((template) => (
+            <button
+              key={template.id}
+              type="button"
+              className="template-library-item"
+              aria-pressed={template.id === selectedTemplateId}
+              onClick={() => onSelectTemplate(template.id)}
+            >
+              <span>{template.label}</span>
+              <small>{template.id}</small>
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      <section className="template-properties-panel">
+        {selectedKind === "cable" && selectedCableTemplate ? (
+          <CableTemplateEditor
+            template={selectedCableTemplate}
+            onUpdateTemplate={onUpdateCableTemplate}
+            onUpdateTextBox={onUpdateCableTextBox}
+            onAddTextBox={onAddCableTextBox}
+            onDeleteTextBox={onDeleteCableTextBox}
+          />
+        ) : (
+          <NodeTemplateEditor
+            template={selectedTemplate}
+            onUpdateTemplate={onUpdateTemplate}
+            onUpdatePort={onUpdatePort}
+            onAddPort={onAddPort}
+            onDeletePort={onDeletePort}
+            onUpdateTextBox={onUpdateTextBox}
+            onAddTextBox={onAddTextBox}
+            onDeleteTextBox={onDeleteTextBox}
+          />
+        )}
+      </section>
+
+      <aside className="template-preview-panel">
+        <div className="template-page-header">
+          <h2>Preview</h2>
+          <button type="button" className="tool-button panel-action" onClick={onShowDisplayPatch}>
+            <Download size={15} aria-hidden="true" />
+            导出显示模板规则
+          </button>
+        </div>
+        {selectedKind === "cable" && selectedCableTemplate ? <CableTemplatePreview template={selectedCableTemplate} /> : <TemplatePreview template={selectedTemplate} />}
+        {showDisplayPatch ? <textarea className="override-output" aria-label="Display rules JSON" readOnly value={displayPatch} /> : null}
+      </aside>
+    </section>
+  );
+}
+
+function NodeTemplateEditor({
+  template,
+  onUpdateTemplate,
+  onUpdatePort,
+  onAddPort,
+  onDeletePort,
+  onUpdateTextBox,
+  onAddTextBox,
+  onDeleteTextBox
+}: {
+  template: DisplayTemplate;
+  onUpdateTemplate: (templateId: string, patch: Partial<DisplayTemplate>) => void;
+  onUpdatePort: (templateId: string, portIndex: number, patch: Partial<TemplatePort>) => void;
+  onAddPort: (templateId: string) => void;
+  onDeletePort: (templateId: string, portIndex: number) => void;
+  onUpdateTextBox: (templateId: string, boxIndex: number, patch: Partial<TemplateTextBox>) => void;
+  onAddTextBox: (templateId: string) => void;
+  onDeleteTextBox: (templateId: string, boxIndex: number) => void;
+}) {
+  const ports = template.ports ?? template.anchors ?? [];
+  return (
+    <>
+      <div className="template-page-header">
+        <h2>{template.label}</h2>
+        <span className="active-count">{template.id}</span>
+      </div>
+      <div className="template-form-grid">
+        <label>
+          Name
+          <input aria-label="Template name" value={template.label} onChange={(event) => onUpdateTemplate(template.id, { label: event.target.value })} />
+        </label>
+        <label>
+          Shape
+          <select aria-label="Template shape" value={template.shape} onChange={(event) => onUpdateTemplate(template.id, { shape: event.target.value as TemplateShape })}>
+            <option value="round-rectangle">round-rectangle</option>
+            <option value="rectangle">rectangle</option>
+            <option value="hexagon">hexagon</option>
+            <option value="ellipse">ellipse</option>
+          </select>
+        </label>
+        <label>
+          Width
+          <input aria-label="Template width" type="number" min="16" value={template.width} onChange={(event) => onUpdateTemplate(template.id, { width: Number(event.target.value) })} />
+        </label>
+        <label>
+          Height
+          <input aria-label="Template height" type="number" min="16" value={template.height} onChange={(event) => onUpdateTemplate(template.id, { height: Number(event.target.value) })} />
+        </label>
+        <label>
+          Fill
+          <input aria-label="Template fill" type="color" value={template.fill} onChange={(event) => onUpdateTemplate(template.id, { fill: event.target.value })} />
+        </label>
+        <label>
+          Stroke
+          <input aria-label="Template stroke" type="color" value={template.stroke} onChange={(event) => onUpdateTemplate(template.id, { stroke: event.target.value })} />
+        </label>
+        <label>
+          Title height
+          <input aria-label="Template title height" type="number" min="0" value={template.titleHeight ?? 0} onChange={(event) => onUpdateTemplate(template.id, { titleHeight: Number(event.target.value) })} />
+        </label>
+        <label>
+          Label position
+          <select aria-label="Template label position" value={template.labelPosition ?? "center"} onChange={(event) => onUpdateTemplate(template.id, { labelPosition: event.target.value as DisplayTemplate["labelPosition"] })}>
+            <option value="center">center</option>
+            <option value="title">title</option>
+            <option value="below">below</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="template-anchor-section">
+        <div className="template-section-header">
+          <h3>Ports</h3>
+          <button type="button" className="tool-button panel-action" onClick={() => onAddPort(template.id)}>Add port</button>
+        </div>
+        <div className="anchor-editor-list">
+          {ports.map((port, index) => (
+            <div key={`${template.id}-${port.id}-${index}`} className="port-editor-row">
+              <input aria-label={`Port ${index + 1} id`} value={port.id} onChange={(event) => onUpdatePort(template.id, index, { id: event.target.value })} />
+              <input aria-label={`Port ${index + 1} connector name`} value={port.connectorName ?? port.label ?? ""} onChange={(event) => onUpdatePort(template.id, index, { connectorName: event.target.value })} />
+              <input aria-label={`Port ${index + 1} id label x`} type="number" value={port.idLabel?.x ?? 0} onChange={(event) => onUpdatePort(template.id, index, { idLabel: { ...defaultPortLabel(), ...port.idLabel, x: Number(event.target.value) } })} />
+              <input aria-label={`Port ${index + 1} id label y`} type="number" value={port.idLabel?.y ?? 0} onChange={(event) => onUpdatePort(template.id, index, { idLabel: { ...defaultPortLabel(), ...port.idLabel, y: Number(event.target.value) } })} />
+              <input aria-label={`Port ${index + 1} id label font size`} type="number" min="6" value={port.idLabel?.fontSize ?? 7} onChange={(event) => onUpdatePort(template.id, index, { idLabel: { ...defaultPortLabel(), ...port.idLabel, fontSize: Number(event.target.value) } })} />
+              <select aria-label={`Port ${index + 1} id label snap`} value={port.idLabel?.snapSide ?? port.side} onChange={(event) => onUpdatePort(template.id, index, { idLabel: { ...defaultPortLabel(), ...port.idLabel, snapSide: event.target.value as TemplatePort["side"] | "free" } })}>
+                <option value="left">left</option>
+                <option value="right">right</option>
+                <option value="top">top</option>
+                <option value="bottom">bottom</option>
+                <option value="center">center</option>
+                <option value="free">free</option>
+              </select>
+              <input aria-label={`Port ${index + 1} connector label x`} type="number" value={port.connectorLabel?.x ?? 0} onChange={(event) => onUpdatePort(template.id, index, { connectorLabel: { ...defaultPortLabel(), ...port.connectorLabel, x: Number(event.target.value) } })} />
+              <input aria-label={`Port ${index + 1} connector label y`} type="number" value={port.connectorLabel?.y ?? 0} onChange={(event) => onUpdatePort(template.id, index, { connectorLabel: { ...defaultPortLabel(), ...port.connectorLabel, y: Number(event.target.value) } })} />
+              <input aria-label={`Port ${index + 1} connector label font size`} type="number" min="6" value={port.connectorLabel?.fontSize ?? 8} onChange={(event) => onUpdatePort(template.id, index, { connectorLabel: { ...defaultPortLabel(), ...port.connectorLabel, fontSize: Number(event.target.value) } })} />
+              <select aria-label={`Port ${index + 1} connector label snap`} value={port.connectorLabel?.snapSide ?? port.side} onChange={(event) => onUpdatePort(template.id, index, { connectorLabel: { ...defaultPortLabel(), ...port.connectorLabel, snapSide: event.target.value as TemplatePort["side"] | "free" } })}>
+                <option value="left">left</option>
+                <option value="right">right</option>
+                <option value="top">top</option>
+                <option value="bottom">bottom</option>
+                <option value="center">center</option>
+                <option value="free">free</option>
+              </select>
+              <button type="button" className="tool-button panel-action" onClick={() => onDeletePort(template.id, index)}>Delete</button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <TextBoxEditor
+        boxes={template.textBoxes ?? []}
+        title="Text boxes"
+        onAdd={() => onAddTextBox(template.id)}
+        onDelete={(index) => onDeleteTextBox(template.id, index)}
+        onUpdate={(index, patch) => onUpdateTextBox(template.id, index, patch)}
+      />
+    </>
+  );
+}
+
+function CableTemplateEditor({
+  template,
+  onUpdateTemplate,
+  onUpdateTextBox,
+  onAddTextBox,
+  onDeleteTextBox
+}: {
+  template: CableTemplate;
+  onUpdateTemplate: (templateId: string, patch: Partial<CableTemplate>) => void;
+  onUpdateTextBox: (templateId: string, boxIndex: number, patch: Partial<TemplateTextBox>) => void;
+  onAddTextBox: (templateId: string) => void;
+  onDeleteTextBox: (templateId: string, boxIndex: number) => void;
+}) {
+  return (
+    <>
+      <div className="template-page-header">
+        <h2>{template.label}</h2>
+        <span className="active-count">{template.id}</span>
+      </div>
+      <div className="template-form-grid">
+        <label>
+          Name
+          <input aria-label="Cable template name" value={template.label} onChange={(event) => onUpdateTemplate(template.id, { label: event.target.value })} />
+        </label>
+        <label>
+          Stroke
+          <input aria-label="Cable template stroke" type="color" value={template.stroke} onChange={(event) => onUpdateTemplate(template.id, { stroke: event.target.value })} />
+        </label>
+        <label>
+          Stroke width
+          <input aria-label="Cable template stroke width" type="number" min="1" value={template.strokeWidth} onChange={(event) => onUpdateTemplate(template.id, { strokeWidth: Number(event.target.value) })} />
+        </label>
+        <label>
+          Line style
+          <select aria-label="Cable template line style" value={template.lineStyle ?? "solid"} onChange={(event) => onUpdateTemplate(template.id, { lineStyle: event.target.value as CableTemplate["lineStyle"] })}>
+            <option value="solid">solid</option>
+            <option value="dashed">dashed</option>
+          </select>
+        </label>
+      </div>
+      <TextBoxEditor
+        boxes={template.textBoxes ?? []}
+        title="Cable text boxes"
+        onAdd={() => onAddTextBox(template.id)}
+        onDelete={(index) => onDeleteTextBox(template.id, index)}
+        onUpdate={(index, patch) => onUpdateTextBox(template.id, index, patch)}
+      />
+    </>
+  );
+}
+
+function TextBoxEditor({
+  boxes,
+  title,
+  onAdd,
+  onDelete,
+  onUpdate
+}: {
+  boxes: TemplateTextBox[];
+  title: string;
+  onAdd: () => void;
+  onDelete: (index: number) => void;
+  onUpdate: (index: number, patch: Partial<TemplateTextBox>) => void;
+}) {
+  return (
+    <div className="template-anchor-section">
+      <div className="template-section-header">
+        <h3>{title}</h3>
+        <button type="button" className="tool-button panel-action" onClick={onAdd}>Add text box</button>
+      </div>
+      <div className="anchor-editor-list">
+        {boxes.map((box, index) => (
+          <div key={`${box.id}-${index}`} className="text-box-editor-row">
+            <input aria-label={`Text box ${index + 1} id`} value={box.id} onChange={(event) => onUpdate(index, { id: event.target.value })} />
+            <input aria-label={`Text box ${index + 1} bind`} value={box.bind} onChange={(event) => onUpdate(index, { bind: event.target.value })} />
+            <input aria-label={`Text box ${index + 1} fallback`} value={box.fallback ?? ""} onChange={(event) => onUpdate(index, { fallback: event.target.value })} />
+            <input aria-label={`Text box ${index + 1} x`} type="number" value={box.x} onChange={(event) => onUpdate(index, { x: Number(event.target.value) })} />
+            <input aria-label={`Text box ${index + 1} y`} type="number" value={box.y} onChange={(event) => onUpdate(index, { y: Number(event.target.value) })} />
+            <input aria-label={`Text box ${index + 1} width`} type="number" min="1" value={box.width} onChange={(event) => onUpdate(index, { width: Number(event.target.value) })} />
+            <input aria-label={`Text box ${index + 1} height`} type="number" min="1" value={box.height} onChange={(event) => onUpdate(index, { height: Number(event.target.value) })} />
+            <select aria-label={`Text box ${index + 1} align`} value={box.align ?? "left"} onChange={(event) => onUpdate(index, { align: event.target.value as TemplateTextBox["align"] })}>
+              <option value="left">left</option>
+              <option value="center">center</option>
+              <option value="right">right</option>
+            </select>
+            <button type="button" className="tool-button panel-action" onClick={() => onDelete(index)}>Delete</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TemplatePreview({ template }: { template: DisplayTemplate }) {
+  const backgroundUri = buildTemplateBackgroundDataUri(template, undefined, { textBoxPlaceholder: "bind" });
+  return (
+    <div className="template-preview-stage">
+      <div
+        className="template-preview-render"
+        style={{
+          width: `${template.width}px`,
+          height: `${template.height}px`,
+          backgroundImage: `url("${backgroundUri}")`
+        }}
+      />
+    </div>
+  );
+}
+
+function CableTemplatePreview({ template }: { template: CableTemplate }) {
+  const fixedLabels = [
+    { box: template.endpointLabels?.sourcePort, value: "SRC_PORT" },
+    { box: template.endpointLabels?.targetPort, value: "DST_PORT" },
+    { box: template.cableLabel, value: "CABLE_ID" }
+  ].filter((item): item is { box: TemplateTextBox; value: string } => Boolean(item.box));
+  return (
+    <div className="template-preview-stage">
+      <div className="cable-template-preview">
+        <svg width="320" height="120" viewBox="0 0 320 120" role="img" aria-label="Cable template preview">
+          <line x1="28" y1="62" x2="292" y2="62" stroke={template.stroke} strokeWidth={template.strokeWidth} strokeDasharray={template.lineStyle === "dashed" ? "8 6" : undefined} strokeLinecap="round" />
+          <rect x="18" y="52" width="42" height="20" fill="#ffffff" stroke={template.stroke} />
+          <rect x="260" y="52" width="42" height="20" fill="#ffffff" stroke={template.stroke} />
+        </svg>
+        {fixedLabels.map((item) => (
+          <span key={item.box.id} className="template-preview-textbox cable-preview-textbox" style={{ ...textBoxPreviewStyle(item.box), left: `calc(50% + ${item.box.x - item.box.width / 2}px)`, top: `calc(50% + ${item.box.y}px)` }}>
+            {item.value}
+          </span>
+        ))}
+        {(template.textBoxes ?? []).map((box, index) => (
+          <span key={`${box.id}-${index}`} className="template-preview-textbox cable-preview-textbox" style={{ ...textBoxPreviewStyle(box), left: `calc(50% + ${box.x - box.width / 2}px)`, top: `calc(50% + ${box.y}px)` }}>
+            {box.bind || box.fallback || box.id}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function anchorPreviewStyle(port: TemplatePort): Record<string, string> {
+  const pct = `${Math.max(0, Math.min(1, port.offset)) * 100}%`;
+  if (port.side === "left") {
+    return { left: "-5px", top: pct };
+  }
+  if (port.side === "right") {
+    return { right: "-5px", top: pct };
+  }
+  if (port.side === "top") {
+    return { left: pct, top: "-5px" };
+  }
+  if (port.side === "bottom") {
+    return { left: pct, bottom: "-5px" };
+  }
+  return { left: "50%", top: "50%" };
+}
+
+function textBoxPreviewStyle(box: TemplateTextBox): Record<string, string> {
+  return {
+    left: `${box.x}px`,
+    top: `${box.y}px`,
+    width: `${box.width}px`,
+    height: `${box.height}px`,
+    color: box.color ?? "#172033",
+    fontSize: `${box.fontSize ?? 10}px`,
+    textAlign: box.align ?? "left"
+  };
+}
+
+function defaultPortLabel() {
+  return { x: 0, y: 0, fontSize: 8, color: "#172033", align: "center" as const, snapSide: "free" as const };
+}
+
+function portLabelPreviewStyle(anchorStyle: Record<string, string>, label: TemplatePortLabel): Record<string, string> {
+  const left = anchorStyle.left ?? (anchorStyle.right ? `calc(100% - ${anchorStyle.right})` : "50%");
+  const top = anchorStyle.top ?? (anchorStyle.bottom ? `calc(100% - ${anchorStyle.bottom})` : "50%");
+  return {
+    left,
+    top,
+    transform: `translate(calc(-50% + ${label.x}px), calc(-50% + ${label.y}px))`,
+    fontSize: `${label.fontSize}px`,
+    color: label.color ?? "#172033",
+    textAlign: label.align ?? "center"
+  };
 }
 
 interface GeneratedTemplates {
@@ -737,18 +1236,21 @@ function buildGeneratedTemplates(mode: TemplateMode): GeneratedTemplates {
     ...templateInterfaceRows.map(formatCsvRow)
   ];
   const componentsRows = [
-    "node_id,type,layer,module,cabinet,slot,order,display_name,template_id,remarks",
+    "node_id,type,layer_id,layer_name,module,cabinet,slot,order,display_name,template_id,template_variant,template_params,remarks",
     ...templateComponentSpecs.map((item) =>
       formatCsvRow([
         item.id,
         item.componentType,
-        item.layer,
+        generatedLayerId(item.layer),
+        generatedLayerName(item.layer),
         templateModuleName,
         "SENS-CAB",
         item.slot,
         String(item.order),
         item.displayName,
         templateIdForGeneratedSpec(item),
+        "",
+        templateParamsForGeneratedSpec(item),
         item.remarks
       ])
     )
@@ -765,7 +1267,7 @@ function buildGeneratedTemplates(mode: TemplateMode): GeneratedTemplates {
 function buildTemplateRules(mode: TemplateMode) {
   const baseRules = {
     layout: {
-      layerOrder: ["interface", "breakout", "part", "route"],
+      layerOrder: ["L0", "L1", "L2", "L3", "L4", "L5", "L6", "L7", "route"],
       moduleOrder: [templateModuleName],
       moduleGap: 700,
       dx: 300,
@@ -773,11 +1275,13 @@ function buildTemplateRules(mode: TemplateMode) {
       cabinetGap: 900,
       slotGap: 120,
       boardGap: 24,
-      projectionDefaults: { mode: "layer", minVisibleLayer: "interface" }
+      projectionDefaults: { mode: "layer", minVisibleLayer: "L0" }
     },
     display: {
       templates: DEFAULT_DISPLAY_RULES.templates,
+      cableTemplates: DEFAULT_DISPLAY_RULES.cableTemplates,
       kindTemplates: DEFAULT_DISPLAY_RULES.kindTemplates,
+      cableKindTemplates: DEFAULT_DISPLAY_RULES.cableKindTemplates,
       nodeTemplates: Object.fromEntries(templateComponentSpecs.map((item) => [item.id, templateIdForGeneratedSpec(item)]))
     }
   };
@@ -826,6 +1330,35 @@ function templateIdForGeneratedSpec(item: TemplateNodeSpec): string {
     return "board-panel";
   }
   return "part-sensor";
+}
+
+function generatedLayerId(layer: TemplateNodeSpec["layer"]): string {
+  if (layer === "interface") {
+    return "L2";
+  }
+  if (layer === "breakout") {
+    return "L1";
+  }
+  return "L0";
+}
+
+function generatedLayerName(layer: TemplateNodeSpec["layer"]): string {
+  if (layer === "interface") {
+    return "接口板";
+  }
+  if (layer === "breakout") {
+    return "分线板";
+  }
+  return "部件";
+}
+
+function templateParamsForGeneratedSpec(item: TemplateNodeSpec): string {
+  if (item.kind !== "port") {
+    return "";
+  }
+  const segments = item.id.split("/");
+  const portId = segments[segments.length - 1] ?? item.displayName;
+  return JSON.stringify({ portId, connectorName: item.displayName });
 }
 
 function formatDisplayRulesPatch(positions: OverridePositions, bends: EdgeBendPoints, displayRules: DisplayRules): string {

@@ -204,11 +204,11 @@ const componentHeaders = ["node_id", "type", "layer", "module", "cabinet", "slot
 function interfaceRowToCsvRow(row: InterfaceRow): string[] {
   return [
     row.rowId,
-    row.srcDevice,
-    row.srcBoard,
+    row.srcDevice ?? row.srcComponent ?? "",
+    row.srcBoard ?? row.srcComponent ?? "",
     row.srcPort,
-    row.dstDevice,
-    row.dstBoard,
+    row.dstDevice ?? row.dstComponent ?? "",
+    row.dstBoard ?? row.dstComponent ?? "",
     row.dstPort,
     row.netType,
     row.medium,
@@ -236,7 +236,7 @@ function routeRowToCsvRow(route: RouteResourceEdge): string[] {
 
 function componentRowToCsvRow(component: ComponentRow): string[] {
   return [
-    component.nodeId,
+    component.nodeId ?? component.componentId ?? "",
     component.componentType,
     component.layer ?? "",
     component.module ?? "",

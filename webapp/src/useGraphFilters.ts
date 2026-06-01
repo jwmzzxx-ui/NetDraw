@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { PositionedGraph } from "../../src/types.js";
+import { CANONICAL_LAYER_IDS } from "../../src/layers.js";
 import { getAvailableModules, getAvailableNetTypes, type ProjectionMode, type ViewMode } from "./graphAdapter.js";
 
 export function useGraphFilters(graph: PositionedGraph) {
@@ -10,6 +11,7 @@ export function useGraphFilters(graph: PositionedGraph) {
   const [projection, setProjection] = useState<ProjectionMode>(graph.rules.projectionDefaults?.mode ?? "layer");
   const [activeModule, setActiveModule] = useState<string | null>(null);
   const [minVisibleLayer, setMinVisibleLayer] = useState(graph.rules.projectionDefaults?.minVisibleLayer ?? "breakout");
+  const [visibleLayerIds, setVisibleLayerIds] = useState<Set<string>>(() => new Set(CANONICAL_LAYER_IDS));
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
 
@@ -20,6 +22,17 @@ export function useGraphFilters(graph: PositionedGraph) {
         next.delete(netType);
       } else {
         next.add(netType);
+      }
+      return next;
+    });
+  };
+  const toggleLayerId = (layerId: string) => {
+    setVisibleLayerIds((current) => {
+      const next = new Set(current);
+      if (next.has(layerId)) {
+        next.delete(layerId);
+      } else {
+        next.add(layerId);
       }
       return next;
     });
@@ -47,6 +60,8 @@ export function useGraphFilters(graph: PositionedGraph) {
     setActiveModule,
     minVisibleLayer,
     setMinVisibleLayer,
+    visibleLayerIds,
+    toggleLayerId,
     zoom,
     setZoom,
     highlightedId,

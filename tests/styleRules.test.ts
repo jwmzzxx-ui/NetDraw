@@ -30,11 +30,20 @@ describe("style rules", () => {
         }),
         expect.objectContaining({
           selector: ".is-highlighted-node",
-          style: expect.objectContaining({ "border-width": 3 })
+          style: expect.objectContaining({ "overlay-color": "#111827", "overlay-padding": 10 })
         }),
         expect.objectContaining({
           selector: ".has-template",
-          style: expect.objectContaining({ width: "data(templateWidth)", "background-image": "data(templateBackground)" })
+          style: expect.objectContaining({ width: "data(templateWidth)", "background-image": "data(templateBackground)", "border-width": 0 })
+        }),
+        expect.objectContaining({
+          selector: ".has-cable-template",
+          style: expect.objectContaining({
+            "line-color": "data(cableStroke)",
+            label: "data(cableCenterLabel)",
+            "source-label": "data(cableSourceLabel)",
+            "target-label": "data(cableTargetLabel)"
+          })
         })
       ])
     );

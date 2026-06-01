@@ -8,6 +8,7 @@ import type { PositionedGraph } from "../src/types.js";
 
 let emitNodePosition: ((nodeId: string, position: Position) => void) | undefined;
 let emitSelect: ((id: string | null) => void) | undefined;
+let lastGraph: PositionedGraph | undefined;
 
 vi.mock("../webapp/src/useCytoscapeGraph.js", () => ({
   useCytoscapeGraph: (
@@ -19,6 +20,7 @@ vi.mock("../webapp/src/useCytoscapeGraph.js", () => ({
   ) => {
     emitNodePosition = onNodePositionChange;
     emitSelect = onSelect;
+    lastGraph = _graph;
     return {
       containerRef: { current: null },
       cyRef: { current: null }
@@ -35,6 +37,7 @@ describe("NetDrawWorkbench", () => {
     cleanup();
     emitNodePosition = undefined;
     emitSelect = undefined;
+    lastGraph = undefined;
   });
 
   test("switches between overview and detail mode and filters net types", () => {
@@ -92,7 +95,8 @@ describe("NetDrawWorkbench", () => {
   test("generates 0/1/2 drawing template files and hand-drawn rules", () => {
     render(<NetDrawWorkbench positionedGraph={fixtureGraph()} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Drawing templates" }));
+    expect(screen.getByRole("button", { name: "手绘模板" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "0/1/2层模板" }));
     expect(screen.getByRole("button", { name: "0/1/2层模板" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Generate templates" }));
 
@@ -108,8 +112,8 @@ describe("NetDrawWorkbench", () => {
     expect(componentsOutput.value).toContain("IO_H2_10M");
     expect(componentsOutput.value).toContain("breakout");
     expect(componentsOutput.value).toContain("interface");
-    expect(rulesOutput.value).toContain('"layerOrder": [\n      "interface",\n      "breakout",\n      "part",\n      "route"\n    ]');
-    expect(rulesOutput.value).toContain('"minVisibleLayer": "interface"');
+    expect(rulesOutput.value).toContain('"layerOrder": [\n      "L0",\n      "L1",\n      "L2",\n      "L3",\n      "L4",\n      "L5",\n      "L6",\n      "L7",\n      "route"\n    ]');
+    expect(rulesOutput.value).toContain('"minVisibleLayer": "L0"');
 
     fireEvent.click(screen.getByRole("button", { name: "手绘模板" }));
     fireEvent.click(screen.getByRole("button", { name: "Generate templates" }));
@@ -134,23 +138,107 @@ describe("NetDrawWorkbench", () => {
     expect(patch.value).toContain('"y": 23');
   });
 
-  test("edits a selected node display template and exports display rules", () => {
+  test("opens the standalone display template page, edits ports, text boxes, and cable templates", () => {
+    render(<NetDrawWorkbench positionedGraph={fixtureGraph()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "显示模板" }));
+
+    expect(screen.getAllByText("Board panel").length).toBeGreaterThan(0);
+    expect(screen.getByText("breakout-panel")).toBeTruthy();
+    expect(screen.getByText("default-cable")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Part sensor/ }));
+    fireEvent.change(screen.getByLabelText("Template width"), { target: { value: "188" } });
+    fireEvent.change(screen.getByLabelText("Template fill"), { target: { value: "#ffeecc" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add port" }));
+    fireEvent.change(screen.getByLabelText("Port 3 id"), { target: { value: "IN_A" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add text box" }));
+    fireEvent.change(screen.getByLabelText("Text box 1 bind"), { target: { value: "metadata.slot" } });
+    expect(document.querySelector(".template-preview-render")?.getAttribute("style")).toContain("IN_A");
+
+    fireEvent.click(screen.getByRole("button", { name: /Default cable/ }));
+    fireEvent.change(screen.getByLabelText("Cable template stroke width"), { target: { value: "4" } });
+    fireEvent.change(screen.getByLabelText("Text box 1 bind"), { target: { value: "sourceRow.remarks" } });
+    expect(screen.queryByText("Node assignment")).toBeNull();
+    expect(screen.queryByLabelText("Search nodes for template assignment")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "导出显示模板规则" }));
+
+    const patch = screen.getByLabelText("Display rules JSON") as HTMLTextAreaElement;
+    expect(patch.value).toContain('"display"');
+    expect(patch.value).toContain('"part-sensor"');
+    expect(patch.value).toContain('"width": 188');
+    expect(patch.value).toContain('"fill": "#ffeecc"');
+    expect(patch.value).toContain('"ports"');
+    expect(patch.value).toContain('"id": "IN_A"');
+    expect(patch.value).toContain('"textBoxes"');
+    expect(patch.value).toContain('"bind": "metadata.slot"');
+    expect(patch.value).toContain('"cableTemplates"');
+    expect(patch.value).toContain('"strokeWidth": 4');
+    expect(patch.value).toContain('"bind": "sourceRow.remarks"');
+
+    fireEvent.click(screen.getByRole("button", { name: "图纸视图" }));
+    expect(lastGraph?.displayRules?.templates["part-sensor"]).toEqual(expect.objectContaining({ width: 188, fill: "#ffeecc" }));
+    expect(lastGraph?.displayRules?.templates["part-sensor"].ports?.some((port) => port.id === "IN_A")).toBe(true);
+    expect(lastGraph?.displayRules?.templates["part-sensor"].textBoxes?.some((box) => box.bind === "metadata.slot")).toBe(true);
+  });
+
+  test("shows selected node template summary and links to the display template page", () => {
     render(<NetDrawWorkbench positionedGraph={fixtureGraph()} />);
 
     act(() => {
       emitSelect?.("port:A/BOARD/P1");
     });
 
-    fireEvent.change(screen.getByLabelText("Display template"), { target: { value: "part-sensor" } });
-    fireEvent.change(screen.getByLabelText("Template width"), { target: { value: "188" } });
-    fireEvent.change(screen.getByLabelText("Template fill"), { target: { value: "#ffeecc" } });
-    fireEvent.click(screen.getByRole("button", { name: "Export display rules" }));
+    expect(screen.queryByLabelText("Display template")).toBeNull();
+    expect(screen.getByRole("button", { name: "编辑显示模板" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "编辑显示模板" }));
+    expect(screen.getByRole("button", { name: "显示模板" }).getAttribute("aria-pressed")).toBe("true");
+  });
 
-    const patch = screen.getByLabelText("Display rules JSON") as HTMLTextAreaElement;
-    expect(patch.value).toContain('"display"');
-    expect(patch.value).toContain('"port:A/BOARD/P1": "part-sensor"');
-    expect(patch.value).toContain('"width": 188');
-    expect(patch.value).toContain('"fill": "#ffeecc"');
+  test("selects node and cable templates from the drawing inspector", () => {
+    const graph = fixtureGraph();
+    graph.displayRules = {
+      templates: {
+        ...graph.displayRules?.templates,
+        "part-sensor": {
+          id: "part-sensor",
+          label: "Part sensor",
+          width: 190,
+          height: 96,
+          shape: "round-rectangle",
+          fill: "#ffffff",
+          stroke: "#737373"
+        }
+      },
+      cableTemplates: {
+        "default-cable": {
+          id: "default-cable",
+          label: "Default cable",
+          stroke: "#2563eb",
+          strokeWidth: 2
+        },
+        "thick-cable": {
+          id: "thick-cable",
+          label: "Thick cable",
+          stroke: "#111827",
+          strokeWidth: 4
+        }
+      },
+      cableKindTemplates: { "logical-cable": "default-cable" }
+    };
+    render(<NetDrawWorkbench positionedGraph={graph} />);
+
+    act(() => {
+      emitSelect?.("port:A/BOARD/P1");
+    });
+    fireEvent.change(screen.getByLabelText("Node display template"), { target: { value: "part-sensor" } });
+    expect(lastGraph?.displayRules?.nodeTemplates?.["port:A/BOARD/P1"]).toBe("part-sensor");
+
+    act(() => {
+      emitSelect?.("cable:C-001");
+    });
+    fireEvent.change(screen.getByLabelText("Cable display template"), { target: { value: "thick-cable" } });
+    expect(lastGraph?.displayRules?.edgeTemplates?.["cable:C-001"]).toBe("thick-cable");
   });
 
   test("exports selected edge bend points as a rules override patch", () => {

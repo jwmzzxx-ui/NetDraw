@@ -17,7 +17,7 @@ export interface NodeKindStyleRule {
 }
 
 export interface StyleRules {
-  nodes: Record<"base" | "device" | "board" | "port" | "route-node", NodeKindStyleRule>;
+  nodes: Record<"base" | "component" | "route-node", NodeKindStyleRule> & Partial<Record<"device" | "board" | "port", NodeKindStyleRule>>;
   netTypes: Record<NetType, NetTypeStyleRule>;
   routeSegment: {
     color: string;
@@ -41,6 +41,7 @@ export interface LegendItem {
 export const DEFAULT_STYLE_RULES: StyleRules = {
   nodes: {
     base: { fill: "#ffffff", stroke: "#9aa8b8", width: 42, height: 24, shape: "round-rectangle" },
+    component: { fill: "#ffffff", stroke: "#737373", width: 190, height: 96, shape: "round-rectangle" },
     device: { fill: "#eef4ff", stroke: "#4777c5", width: 78, height: 36, shape: "round-rectangle" },
     board: { fill: "#f4f7f9", stroke: "#7a899a", width: 64, height: 28, shape: "round-rectangle" },
     port: { fill: "#ffffff", stroke: "#b7c0ca", width: 44, height: 22, shape: "round-rectangle" },
@@ -95,9 +96,10 @@ export function cytoscapeStylesheetFromRules(rules: StyleRules = DEFAULT_STYLE_R
         shape: baseNode.shape
       }
     },
-    nodeKindStyle("device", rules.nodes.device, { "font-weight": 700 }),
-    nodeKindStyle("board", rules.nodes.board),
-    nodeKindStyle("port", rules.nodes.port),
+    nodeKindStyle("component", rules.nodes.component, { "font-weight": 700 }),
+    ...(rules.nodes.device ? [nodeKindStyle("device", rules.nodes.device, { "font-weight": 700 })] : []),
+    ...(rules.nodes.board ? [nodeKindStyle("board", rules.nodes.board)] : []),
+    ...(rules.nodes.port ? [nodeKindStyle("port", rules.nodes.port)] : []),
     nodeKindStyle("route-node", rules.nodes["route-node"]),
     {
       selector: ".has-template",
@@ -105,13 +107,14 @@ export function cytoscapeStylesheetFromRules(rules: StyleRules = DEFAULT_STYLE_R
         width: "data(templateWidth)",
         height: "data(templateHeight)",
         shape: "data(templateShape)" as never,
-        "background-color": "data(templateFill)",
-        "border-color": "data(templateStroke)",
-        "border-width": "data(templateStrokeWidth)",
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgba(0, 0, 0, 0)",
+        "border-width": 0,
         "background-image": "data(templateBackground)",
         "background-fit": "contain",
         "background-clip": "none",
-        "background-opacity": 1
+        "background-opacity": 1,
+        "z-index": 10
       }
     },
     {
@@ -155,12 +158,33 @@ export function cytoscapeStylesheetFromRules(rules: StyleRules = DEFAULT_STYLE_R
         width: rule.width
       }
     })),
-    { selector: ".is-highlighted", style: { width: 5, "z-index": 99, label: "data(cableId)" } },
+    {
+      selector: ".has-cable-template",
+      style: {
+        "line-color": "data(cableStroke)",
+        "target-arrow-color": "data(cableStroke)",
+        width: "data(cableStrokeWidth)",
+        "line-style": "data(cableLineStyle)" as never,
+        label: "data(cableCenterLabel)",
+        "source-label": "data(cableSourceLabel)",
+        "target-label": "data(cableTargetLabel)",
+        "source-text-offset": 34,
+        "target-text-offset": 34,
+        "text-background-color": "#ffffff",
+        "text-background-opacity": 1,
+        "text-background-padding": "3px",
+        "text-border-color": "#111827",
+        "text-border-opacity": 1,
+        "text-border-width": 1
+      }
+    },
+    { selector: ".is-highlighted", style: { width: 5, "z-index": 99, label: "data(cableCenterLabel)", "source-label": "data(cableSourceLabel)", "target-label": "data(cableTargetLabel)" } },
     {
       selector: ".is-highlighted-node",
       style: {
-        "border-width": 3,
-        "border-color": "#111827",
+        "overlay-color": "#111827",
+        "overlay-opacity": 0.12,
+        "overlay-padding": 10,
         "z-index": 98
       }
     }

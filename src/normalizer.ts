@@ -4,6 +4,7 @@ export type AliasTarget = string | { normalizedName: string; displayName?: strin
 
 export interface NormalizationAliases {
   global?: Record<string, AliasTarget>;
+  components?: Record<string, AliasTarget>;
   devices?: Record<string, AliasTarget>;
   boards?: Record<string, AliasTarget>;
   ports?: Record<string, AliasTarget>;
@@ -15,9 +16,11 @@ export interface NormalizationResult {
 }
 
 type NormalizedField = keyof NormalizedInterfaceRow["normalized"];
-type AliasCategory = "devices" | "boards" | "ports";
+type AliasCategory = "components" | "devices" | "boards" | "ports";
 
 const fieldCategories: Record<NormalizedField, AliasCategory> = {
+  srcComponent: "components",
+  dstComponent: "components",
   srcDevice: "devices",
   dstDevice: "devices",
   srcBoard: "boards",
@@ -34,7 +37,15 @@ export function normalizeInterfaceRows(rows: InterfaceRow[], aliases: Normalizat
     const normalized = {} as NormalizedInterfaceRow["normalized"];
 
     for (const field of Object.keys(fieldCategories) as NormalizedField[]) {
-      const name = normalizeName(String(row[field]), field, aliases);
+      const rawValue = readRowField(row, field);
+      if (!rawValue && field !== "srcComponent" && field !== "dstComponent" && field !== "srcPort" && field !== "dstPort") {
+        continue;
+      }
+      const name = field === "srcComponent" && !row.srcComponent
+        ? normalizeLegacyComponent(row.srcDevice, row.srcBoard, aliases)
+        : field === "dstComponent" && !row.dstComponent
+          ? normalizeLegacyComponent(row.dstDevice, row.dstBoard, aliases)
+          : normalizeName(rawValue, field, aliases);
       normalized[field] = name;
 
       if (name.originalName !== name.normalizedName || name.originalName !== name.displayName) {
@@ -79,6 +90,36 @@ export function normalizeInterfaceRows(rows: InterfaceRow[], aliases: Normalizat
   return {
     rows: normalizedRows,
     logs
+  };
+}
+
+function readRowField(row: InterfaceRow, field: NormalizedField): string {
+  if (field === "srcComponent") {
+    return row.srcComponent ?? legacyComponentName(row.srcDevice, row.srcBoard);
+  }
+  if (field === "dstComponent") {
+    return row.dstComponent ?? legacyComponentName(row.dstDevice, row.dstBoard);
+  }
+  return String(row[field] ?? "");
+}
+
+function legacyComponentName(device: string | undefined, board: string | undefined): string {
+  return [device, board].filter(Boolean).join("/") || device || board || "";
+}
+
+function normalizeLegacyComponent(device: string | undefined, board: string | undefined, aliases: NormalizationAliases): NormalizedName {
+  const rawDevice = device ?? "";
+  const rawBoard = board ?? "";
+  const normalizedDevice = normalizeName(rawDevice, "srcDevice", aliases);
+  const normalizedBoard = normalizeName(rawBoard, "srcBoard", aliases);
+  const originalName = legacyComponentName(rawDevice, rawBoard);
+  const normalizedName = legacyComponentName(normalizedDevice.normalizedName, normalizedBoard.normalizedName);
+  const displayName = legacyComponentName(normalizedDevice.displayName, normalizedBoard.displayName);
+  return {
+    originalName,
+    normalizedName,
+    displayName,
+    slug: toSlug(normalizedName)
   };
 }
 
@@ -130,7 +171,10 @@ function findAlias(
   aliases: NormalizationAliases
 ): AliasTarget | undefined {
   const categoryAliases = aliases[category];
-  return findAliasInMap(originalName, categoryAliases) ?? findAliasInMap(originalName, aliases.global);
+  const legacyAliases = category === "components"
+    ? findAliasInMap(originalName, aliases.boards) ?? findAliasInMap(originalName, aliases.devices)
+    : undefined;
+  return findAliasInMap(originalName, categoryAliases) ?? legacyAliases ?? findAliasInMap(originalName, aliases.global);
 }
 
 function findAliasInMap(originalName: string, aliasMap: Record<string, AliasTarget> | undefined): AliasTarget | undefined {

@@ -29,6 +29,20 @@ board:PART_A/BRK_A,breakout_board,breakout,MODULE-A,CAB-A,SLOT-01,3,Breakout A,,
     ]);
   });
 
+  test("parses PDM_Code as pdmCode and keeps legacy code aliases compatible", () => {
+    const components = parseComponentsCsv(`component_id,component_type,component_name,PDM_Code,ports
+5165113,part,Photo Sensor,5165113,"[{""port_id"":""5_488_CT85"",""connector_name"":""H2*2""}]"
+LEGACY,part,Legacy Sensor,OLD-001,"[]"
+`);
+
+    expect(components[0]).toEqual(expect.objectContaining({ componentId: "5165113", pdmCode: "5165113" }));
+    expect(components[0].ports).toEqual([expect.objectContaining({ portId: "5_488_CT85", connectorName: "H2*2" })]);
+    const legacy = parseComponentsCsv(`component_id,component_type,component_name,component_code
+LEGACY,part,Legacy Sensor,OLD-001
+`);
+    expect(legacy[0]).toEqual(expect.objectContaining({ pdmCode: "OLD-001", componentCode: "OLD-001" }));
+  });
+
   test("applies component metadata before preset layout", () => {
     const graph = buildCanonicalGraph(rows);
     const enriched = applyComponentMetadata(
@@ -40,11 +54,13 @@ port:PART_A/BRK_A/PWR_IN,port,breakout,CAB-A,SLOT-02,6
 `)
     );
 
-    const port = enriched.nodes.find((node) => node.id === "port:PART_A/BRK_A/PWR_IN");
-    expect(port).toEqual(
+    const component = enriched.nodes.find((node) => node.id === "component:PART_A_BRK_A");
+    expect(component).toEqual(
       expect.objectContaining({
-        layer: "breakout",
+        layer: "L1",
         metadata: expect.objectContaining({
+          layerId: "L1",
+          legacyLayer: "breakout",
           componentType: "port",
           cabinet: "CAB-A",
           slot: "SLOT-02",
@@ -52,13 +68,15 @@ port:PART_A/BRK_A/PWR_IN,port,breakout,CAB-A,SLOT-02,6
         })
       })
     );
+    expect(component?.ports).toEqual(expect.arrayContaining([expect.objectContaining({ portId: "PWR_IN" })]));
 
     const positioned = createPresetLayout(enriched);
-    const positionedPort = positioned.nodes.find((node) => node.id === "port:PART_A/BRK_A/PWR_IN");
-    expect(positionedPort?.layout.layer).toBe("breakout");
-    expect(positionedPort?.layout.module).toBe("");
-    expect(positionedPort?.layout.cabinet).toBe("CAB-A");
-    expect(positionedPort?.layout.slot).toBe("SLOT-02");
+    const positionedComponent = positioned.nodes.find((node) => node.id === "component:PART_A_BRK_A");
+    expect(positionedComponent?.layout.layer).toBe("L1");
+    expect(positionedComponent?.layout.layerId).toBe("L1");
+    expect(positionedComponent?.layout.module).toBe("");
+    expect(positionedComponent?.layout.cabinet).toBe("CAB-A");
+    expect(positionedComponent?.layout.slot).toBe("SLOT-02");
   });
 
   test("applies module metadata into graph nodes and positioned layout", () => {
@@ -71,13 +89,13 @@ port:PART_A/BRK_A/PWR_IN,port,breakout,MODULE-A,CAB-A,SLOT-01,3
 `)
     );
 
-    const port = enriched.nodes.find((node) => node.id === "port:PART_A/BRK_A/PWR_IN");
-    expect(port?.metadata?.module).toBe("MODULE-A");
+    const component = enriched.nodes.find((node) => node.id === "component:PART_A_BRK_A");
+    expect(component?.metadata?.module).toBe("MODULE-A");
 
     const positioned = createPresetLayout(enriched);
-    const positionedPort = positioned.nodes.find((node) => node.id === "port:PART_A/BRK_A/PWR_IN");
-    expect(positionedPort?.layout.module).toBe("MODULE-A");
-    expect(positionedPort?.layout.reason).toContain("module=MODULE-A");
+    const positionedComponent = positioned.nodes.find((node) => node.id === "component:PART_A_BRK_A");
+    expect(positionedComponent?.layout.module).toBe("MODULE-A");
+    expect(positionedComponent?.layout.reason).toContain("module=MODULE-A");
   });
 
   test("applies display template metadata to graph nodes", () => {
@@ -88,8 +106,8 @@ port:PART_A/BRK_A/PWR_IN,port,breakout,connector-port,left-in,"{""anchorId"":""l
 `)
     );
 
-    const port = enriched.nodes.find((node) => node.id === "port:PART_A/BRK_A/PWR_IN");
-    expect(port?.metadata).toEqual(
+    const component = enriched.nodes.find((node) => node.id === "component:PART_A_BRK_A");
+    expect(component?.metadata).toEqual(
       expect.objectContaining({
         templateId: "connector-port",
         templateVariant: "left-in",

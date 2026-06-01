@@ -21,23 +21,22 @@ const rows: InterfaceRow[] = [
 ];
 
 describe("buildCanonicalGraph", () => {
-  test("creates stable device, board, port nodes and logical cable edges", () => {
+  test("creates stable component nodes with embedded ports and logical cable edges", () => {
     const graph = buildCanonicalGraph(rows);
 
-    expect(graph.nodes.map((node) => node.id)).toEqual([
-      "device:Device_A",
-      "board:Device_A/Board_A",
-      "port:Device_A/Board_A/P1",
-      "device:Device_B",
-      "board:Device_B/Board_B",
-      "port:Device_B/Board_B/P2"
-    ]);
+    expect(graph.nodes.map((node) => node.id)).toEqual(["component:Device_A_Board_A", "component:Device_B_Board_B"]);
+    expect(graph.nodes[0]).toEqual(expect.objectContaining({
+      type: "component",
+      ports: [expect.objectContaining({ portId: "P1" })]
+    }));
     expect(graph.edges).toEqual([
       expect.objectContaining({
         id: "cable:C-001",
         type: "logical-cable",
-        source: "port:Device_A/Board_A/P1",
-        target: "port:Device_B/Board_B/P2",
+        source: "component:Device_A_Board_A",
+        target: "component:Device_B_Board_B",
+        sourcePortId: "P1",
+        targetPortId: "P2",
         cableId: "C-001",
         netType: "COMM"
       })
@@ -96,19 +95,19 @@ describe("buildCanonicalGraph", () => {
     ).rows;
 
     const graph = buildCanonicalGraph(normalized);
-    const device = graph.nodes.find((node) => node.id === "device:CTRL_A");
+    const component = graph.nodes.find((node) => node.id === "component:CTRL_A_Board_A");
 
-    expect(graph.nodes.filter((node) => node.id === "device:CTRL_A")).toHaveLength(1);
-    expect(device).toEqual(
+    expect(graph.nodes.filter((node) => node.id === "component:CTRL_A_Board_A")).toHaveLength(1);
+    expect(component).toEqual(
       expect.objectContaining({
-        displayName: "Control A",
+        displayName: "Control A/Board A",
         metadata: expect.objectContaining({
-          originalNames: "Device A | Control-A",
-          normalizedName: "CTRL_A"
+          originalNames: "Device A/Board A | Control-A/Board A",
+          normalizedName: "CTRL_A/Board A"
         })
       })
     );
-    expect(graph.edges.map((edge) => edge.source)).toEqual(["port:CTRL_A/Board_A/P1", "port:CTRL_A/Board_A/P1"]);
+    expect(graph.edges.map((edge) => edge.source)).toEqual(["component:CTRL_A_Board_A", "component:CTRL_A_Board_A"]);
   });
 
   test("builds query indexes and diagnostics for the canonical graph", () => {
@@ -126,13 +125,13 @@ describe("buildCanonicalGraph", () => {
     const indexes = graph.indexes;
 
     expect(indexes).toBeDefined();
-    expect(indexes?.byId["port:Device_A/Board_A/P1"]).toEqual({ kind: "node", index: 2 });
+    expect(indexes?.byId["component:Device_A_Board_A"]).toEqual({ kind: "node", index: 0 });
     expect(indexes?.byId["cable:C-001"]).toEqual({ kind: "edge", index: 0 });
     expect(indexes?.byCableId["C-001"]).toEqual({
       logicalCableEdgeIds: ["cable:C-001"],
       routeSegmentEdgeIds: ["route-segment:C-001:0"]
     });
-    expect(indexes?.byParent["board:Device_A/Board_A"]).toEqual(["port:Device_A/Board_A/P1"]);
+    expect(indexes?.byParent).toEqual({});
     expect(graph.diagnostics).toEqual([]);
   });
 
@@ -153,8 +152,10 @@ describe("buildCanonicalGraph", () => {
       expect.objectContaining({
         cableId: "C-001",
         logicalCable: expect.objectContaining({ id: "cable:C-001" }),
-        sourcePort: expect.objectContaining({ id: "port:Device_A/Board_A/P1" }),
-        targetPort: expect.objectContaining({ id: "port:Device_B/Board_B/P2" }),
+        sourceComponent: expect.objectContaining({ id: "component:Device_A_Board_A" }),
+        targetComponent: expect.objectContaining({ id: "component:Device_B_Board_B" }),
+        sourcePort: expect.objectContaining({ portId: "P1" }),
+        targetPort: expect.objectContaining({ portId: "P2" }),
         routeSegments: [expect.objectContaining({ id: "route-segment:C-001:0" })],
         routeNodeIds: ["route:TRAY_1", "route:SW_1"]
       })

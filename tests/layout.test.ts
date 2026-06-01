@@ -29,7 +29,8 @@ describe("createPresetLayout", () => {
 
     expect(positionOf(positioned, "device:PART_A")).toEqual({ x: 0, y: 0 });
     expect(positionOf(positioned, "device:CTRL_A")).toEqual({ x: 200, y: 20 });
-    expect(positionOf(positioned, "device:UNKNOWN").x).toBe(800);
+    expect(positionOf(positioned, "device:UNKNOWN").x).toBe(0);
+    expect(positioned.nodes.find((node) => node.id === "device:UNKNOWN")?.layout.layerId).toBe("L0");
   });
 
   test("orders y coordinates by cabinet, slot, device, board and order metadata", () => {

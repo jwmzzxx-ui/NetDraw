@@ -106,11 +106,11 @@ describe("runPipeline", () => {
     expect(graphJson.nodes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: "device:CTRL_A",
-          displayName: "Control A",
-          metadata: expect.objectContaining({ originalNames: "Control-A" })
+          id: "component:CTRL_A_CTRL_BOARD",
+          displayName: "Control A/Control Board",
+          metadata: expect.objectContaining({ originalNames: "Control-A/控制板A" }),
+          ports: expect.arrayContaining([expect.objectContaining({ portId: "LAN1" })])
         }),
-        expect.objectContaining({ id: "port:CTRL_A/CTRL_BOARD/LAN1" })
       ])
     );
     const normalizationReport = await readFile(join(outDir, "normalization-report.md"), "utf8");
@@ -192,7 +192,7 @@ describe("runPipeline", () => {
         layout: {
           dx: 300,
           overridePositions: {
-            "port:PART_A/BRK_A/PWR_IN": { x: 1111, y: 222 }
+            "component:PART_A_BRK_A": { x: 1111, y: 222 }
           }
         },
         style: {
@@ -223,7 +223,7 @@ describe("runPipeline", () => {
 
     await expect(stat(join(outDir, "rules-cables.csv"))).resolves.toBeTruthy();
     const positionedGraph = JSON.parse(await readFile(join(outDir, "positioned-graph.json"), "utf8"));
-    const overridden = positionedGraph.nodes.find((node: { id: string }) => node.id === "port:PART_A/BRK_A/PWR_IN");
+    const overridden = positionedGraph.nodes.find((node: { id: string }) => node.id === "component:PART_A_BRK_A");
     expect(overridden.position).toEqual({ x: 1111, y: 222 });
     expect(positionedGraph.displayRules.nodeTemplates["device:PART_A"]).toBe("part-sensor");
     expect(positionedGraph.displayRules.templateOverrides["device:PART_A"]).toEqual(expect.objectContaining({ width: 210, label: "Part Sensor" }));
@@ -255,14 +255,15 @@ describe("runPipeline", () => {
     });
 
     const graphJson = JSON.parse(await readFile(join(outDir, "canonical-graph.json"), "utf8"));
-    const port = graphJson.nodes.find((node: { id: string }) => node.id === "port:PART_A/BRK_A/PWR_IN");
-    expect(port.displayName).toBe("Power Input");
-    expect(port.metadata).toEqual(expect.objectContaining({ cabinet: "CAB-A", slot: "SLOT-01", order: "3" }));
+    const component = graphJson.nodes.find((node: { id: string }) => node.id === "component:PART_A_BRK_A");
+    expect(component.displayName).toBe("Power Input");
+    expect(component.metadata).toEqual(expect.objectContaining({ cabinet: "CAB-A", slot: "SLOT-01", order: "3" }));
 
     const positionedGraph = JSON.parse(await readFile(join(outDir, "positioned-graph.json"), "utf8"));
-    const positionedPort = positionedGraph.nodes.find((node: { id: string }) => node.id === "port:PART_A/BRK_A/PWR_IN");
-    expect(positionedPort.layout.layer).toBe("breakout");
-    expect(positionedPort.layout.cabinet).toBe("CAB-A");
+    const positionedComponent = positionedGraph.nodes.find((node: { id: string }) => node.id === "component:PART_A_BRK_A");
+    expect(positionedComponent.layout.layer).toBe("L1");
+    expect(positionedComponent.layout.layerId).toBe("L1");
+    expect(positionedComponent.layout.cabinet).toBe("CAB-A");
   });
 
   test("reports unmatched component metadata rows as a warning diagnostic", async () => {

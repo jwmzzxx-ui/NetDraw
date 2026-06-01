@@ -1,6 +1,7 @@
 import type { EdgeDefinition, NodeDefinition } from "cytoscape";
 import type { GraphEdge, Position, PositionedGraph, PositionedNode } from "../../src/types.js";
-import { buildTemplateBackgroundDataUri, DEFAULT_DISPLAY_RULES, resolveDisplayTemplate } from "../../src/displayRules.js";
+import { buildCableTemplateContext, buildTemplateBackgroundDataUri, DEFAULT_DISPLAY_RULES, renderTemplateTextBox, resolveCableTemplate, resolveDisplayTemplate } from "../../src/displayRules.js";
+import { layerLabelFor, normalizeLayerId } from "../../src/layers.js";
 
 export type ViewMode = "overview" | "detail";
 export type ProjectionMode = "module" | "layer" | "detail";
@@ -12,6 +13,7 @@ export interface GraphViewState {
   projection?: ProjectionMode;
   activeModule?: string | null;
   minVisibleLayer?: string;
+  visibleLayerIds?: Set<string>;
   highlightedId: string | null;
   zoom: number;
 }
@@ -39,8 +41,11 @@ export function filterGraphForView(graph: PositionedGraph, state: GraphViewState
   if (projection === "module") {
     return buildModuleProjection(graph, filteredEdges);
   }
+  if (projection === "layer" && state.visibleLayerIds) {
+    return filterByVisibleLayers(graph, filteredEdges, state.visibleLayerIds);
+  }
   if (projection === "layer") {
-    return buildLayerProjection(graph, filteredEdges, state.minVisibleLayer ?? graph.rules.projectionDefaults?.minVisibleLayer ?? "breakout");
+    return buildLayerProjection(graph, filteredEdges, state.minVisibleLayer ?? graph.rules.projectionDefaults?.minVisibleLayer ?? "L1");
   }
 
   const edges = state.mode === "overview" ? buildSummaryEdges(filteredEdges) : filteredEdges;
@@ -62,10 +67,13 @@ export function buildCytoscapeElements(graph: PositionedGraph, state: GraphViewS
       return {
         data: {
           id: node.id,
-          label: displayLabel(node, state, template.label),
+          label: "",
+          templateLabel: displayLabel(node, state, template.label),
           kind: node.type,
           layer: node.layout.layer,
-          parent: node.parent,
+          layerId: node.layout.layerId ?? normalizeLayerId(node.layout.layer),
+          layerName: node.layout.layerName ?? layerLabelFor(node.layout.layerId ?? normalizeLayerId(node.layout.layer)),
+          parentId: node.parent,
           highlighted: highlight.nodeIds.has(node.id),
           templateId: template.templateId,
           templateWidth: template.width,
@@ -74,8 +82,10 @@ export function buildCytoscapeElements(graph: PositionedGraph, state: GraphViewS
           templateFill: template.fill,
           templateStroke: template.stroke,
           templateStrokeWidth: template.strokeWidth ?? 1,
-          templateAnchors: template.anchors,
-          templateBackground: buildTemplateBackgroundDataUri(template)
+          templatePorts: template.ports,
+          templateTextBoxes: template.textBoxes,
+          templateAnchors: template.ports,
+          templateBackground: buildTemplateBackgroundDataUri(template, node)
         },
         position: node.position,
         classes: [highlight.nodeIds.has(node.id) ? "is-highlighted-node" : "", "has-template", `template-${template.templateId}`].filter(Boolean).join(" ")
@@ -84,6 +94,12 @@ export function buildCytoscapeElements(graph: PositionedGraph, state: GraphViewS
     edges: filtered.edges.map((edge) => {
       const bendData = buildBendData(filtered, edge);
       const highlighted = highlight.edgeIds.has(edge.id);
+      const cableTemplate = edge.type === "logical-cable" ? resolveCableTemplate(edge, graph.displayRules ?? DEFAULT_DISPLAY_RULES) : null;
+      const nodeById = buildNodeIndex(filtered);
+      const edgeContext = buildCableTemplateContext(edge, nodeById.get(edge.source), nodeById.get(edge.target));
+      const cableSourceLabel = cableTemplate ? renderTemplateTextBox(cableTemplate.endpointLabels?.sourcePort ?? { id: "source-connector", x: -80, y: -18, width: 58, height: 18, bind: "sourceConnectorName" }, edgeContext) : "";
+      const cableTargetLabel = cableTemplate ? renderTemplateTextBox(cableTemplate.endpointLabels?.targetPort ?? { id: "target-connector", x: 80, y: -18, width: 58, height: 18, bind: "targetConnectorName" }, edgeContext) : "";
+      const cableCenterLabel = cableTemplate ? renderTemplateTextBox(cableTemplate.cableLabel ?? { id: "cable-id", x: 0, y: -34, width: 110, height: 16, bind: "cableId" }, edgeContext) : "";
       return {
         data: {
           id: edge.id,
@@ -95,9 +111,25 @@ export function buildCytoscapeElements(graph: PositionedGraph, state: GraphViewS
           medium: edge.medium,
           routeString: edge.routeString ?? edge.routeHint ?? "",
           highlighted,
+          cableTemplateId: cableTemplate?.templateId,
+          cableStroke: cableTemplate?.stroke,
+          cableStrokeWidth: cableTemplate?.strokeWidth,
+          cableLineStyle: cableTemplate?.lineStyle ?? "solid",
+          cableTextBoxes: cableTemplate?.textBoxes ?? [],
+          sourceConnectorName: edgeContext.sourceConnectorName,
+          targetConnectorName: edgeContext.targetConnectorName,
+          cableSourceLabel,
+          cableTargetLabel,
+          cableCenterLabel,
+          cableTemplateText: cableTemplate ? [
+            cableSourceLabel,
+            cableTargetLabel,
+            cableCenterLabel,
+            ...(cableTemplate.textBoxes ?? []).map((box) => renderTemplateTextBox(box, edgeContext))
+          ].filter(Boolean).join(" ") : "",
           ...bendData
         },
-        classes: edgeClasses(edge, highlighted, Boolean(bendData))
+        classes: [edgeClasses(edge, highlighted, Boolean(bendData)), cableTemplate ? "has-cable-template" : ""].filter(Boolean).join(" ")
       };
     })
   };
@@ -195,6 +227,21 @@ function buildLayerProjection(graph: PositionedGraph, edges: GraphEdge[], minVis
   return { ...graph, nodes: Array.from(nodes.values()), edges: projectedEdges };
 }
 
+function filterByVisibleLayers(graph: PositionedGraph, edges: GraphEdge[], visibleLayerIds: Set<string>): PositionedGraph {
+  const nodeById = buildNodeIndex(graph);
+  const visibleNodes = graph.nodes.filter((node) => node.type !== "route-node" && visibleLayerIds.has(node.layout.layerId ?? normalizeLayerId(node.layout.layer)));
+  const visibleNodeIds = new Set(visibleNodes.map((node) => node.id));
+  const visibleEdges = edges.filter((edge) => {
+    if (edge.type !== "logical-cable") {
+      return visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target);
+    }
+    const source = nodeById.get(edge.source);
+    const target = nodeById.get(edge.target);
+    return Boolean(source && target && visibleLayerIds.has(source.layout.layerId ?? normalizeLayerId(source.layout.layer)) && visibleLayerIds.has(target.layout.layerId ?? normalizeLayerId(target.layout.layer)));
+  });
+  return { ...graph, nodes: visibleNodes, edges: visibleEdges };
+}
+
 function layerEndpointFor(graph: PositionedGraph, node: PositionedNode, minVisibleLayer: string): PositionedNode {
   if (layerRank(node.layout.layer, graph) < layerRank(minVisibleLayer, graph)) {
     return moduleNodeFor(graph, node);
@@ -212,20 +259,23 @@ function moduleNodeFor(graph: PositionedGraph, node: PositionedNode): Positioned
 function layerNodeFor(node: PositionedNode): PositionedNode {
   const moduleName = node.layout.module || "UNASSIGNED";
   const boardPath = [node.layout.device, node.layout.board].filter(Boolean).join("/");
-  const key = `${moduleName}:${node.layout.layer}:${boardPath || node.layout.device || node.id}`;
-  const label = [moduleName, node.layout.layer, boardPath || node.layout.device || node.displayName].filter(Boolean).join(" · ");
+  const componentLabel = node.layout.pdmCode || node.layout.componentCode || node.layout.component || boardPath || node.layout.device || node.displayName;
+  const key = `${moduleName}:${node.layout.layer}:${componentLabel}`;
+  const label = [moduleName, node.layout.layer, componentLabel].filter(Boolean).join(" · ");
   return syntheticNode(`layer:${safeId(key)}`, label, node, node.position, node.layout.layer);
 }
 
 function syntheticNode(id: string, displayName: string, source: PositionedNode, position: Position, layer: string): PositionedNode {
   return {
     id,
-    type: "device",
+    type: "component",
     displayName,
     position,
     layout: {
       ...source.layout,
       layer,
+      layerId: source.layout.layerId ?? normalizeLayerId(source.layout.layer),
+      layerName: layerLabelFor(source.layout.layerId ?? normalizeLayerId(source.layout.layer)),
       reason: `topology projection for ${displayName}`
     }
   };
@@ -238,7 +288,12 @@ function edgeTouchesModule(graph: PositionedGraph, edge: GraphEdge, moduleName: 
 
 function layerRank(layer: string, graph: PositionedGraph): number {
   const index = graph.rules.layerOrder.indexOf(layer);
-  return index >= 0 ? index : graph.rules.layerOrder.length;
+  if (index >= 0) {
+    return index;
+  }
+  const normalizedLayer = normalizeLayerId(layer);
+  const normalizedIndex = graph.rules.layerOrder.map((entry) => entry === "route" ? "route" : normalizeLayerId(entry)).indexOf(normalizedLayer);
+  return normalizedIndex >= 0 ? normalizedIndex : graph.rules.layerOrder.length;
 }
 
 function averagePosition(nodes: PositionedNode[]): Position {
@@ -341,10 +396,7 @@ function buildSummaryEdges(edges: GraphEdge[]): GraphEdge[] {
 }
 
 function displayLabel(node: PositionedNode, state: GraphViewState, templateLabel = node.displayName): string {
-  if (node.type === "port" && state.mode === "overview") {
-    return "";
-  }
-  if ((node.type === "board" || node.type === "port" || node.type === "route-node") && state.zoom < LABEL_ZOOM_THRESHOLD) {
+  if (node.type === "route-node" && state.zoom < LABEL_ZOOM_THRESHOLD) {
     return "";
   }
   return templateLabel;

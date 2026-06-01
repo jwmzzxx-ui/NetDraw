@@ -50,6 +50,16 @@ describe("graph SVG exporter", () => {
     expect(svg).not.toContain(`id="edge-cable:CAB-001"><line`);
   });
 
+  test("renders cable endpoint connector boxes and middle cable id", () => {
+    const svg = renderGraphSvg(createFixtureGraph(), { title: "Cable template" });
+
+    expect(svg).toContain("LAN1");
+    expect(svg).toContain("GE_01");
+    expect(svg).toContain("CAB-001");
+    expect(svg).toContain("<rect");
+    expect(svg).toContain("stroke=\"#111827\"");
+  });
+
   test("renders display templates into exported SVG nodes", () => {
     const graph = createFixtureGraph();
     graph.displayRules = {
@@ -64,19 +74,36 @@ describe("graph SVG exporter", () => {
           stroke: "#737373",
           strokeWidth: 2,
           labelPosition: "title",
-          anchors: [{ id: "left", side: "left", offset: 0.62 }]
+          ports: [{ id: "PHOTO_IN", side: "left", offset: 0.62 }],
+          textBoxes: [{ id: "node-name", x: 30, y: 52, width: 120, height: 16, bind: "displayName", fontSize: 10, align: "center" }]
         }
       },
+      cableTemplates: {
+        "default-cable": {
+          id: "default-cable",
+          label: "Default cable",
+          stroke: "#111111",
+          strokeWidth: 4,
+          lineStyle: "dashed",
+          textBoxes: [{ id: "cable-note", x: 0, y: -20, width: 120, height: 16, bind: "sourceRow.remarks", fontSize: 10, align: "center" }]
+        }
+      },
+      cableKindTemplates: { "logical-cable": "default-cable" },
       nodeTemplates: { "device:PART_A": "part-sensor" },
       kindTemplates: { device: "part-sensor" },
       templateOverrides: { "device:PART_A": { label: "Photo Sensor" } }
     };
+    graph.edges[0].sourceRow.remarks = "Cable label";
 
     const svg = renderGraphSvg(graph);
 
     expect(svg).toContain("Photo Sensor");
+    expect(svg).toContain("PHOTO_IN");
+    expect(svg).toContain("PART_A");
+    expect(svg).toContain("Cable label");
     expect(svg).toContain("width=\"190\"");
     expect(svg).toContain("<circle");
+    expect(svg).toContain("stroke-width=\"4\"");
   });
 });
 

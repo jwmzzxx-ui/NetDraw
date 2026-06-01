@@ -27,8 +27,14 @@ export function validateInterfaceRows(rows: InterfaceRow[]): ValidationIssue[] {
       });
     }
 
-    for (const field of ["srcDevice", "srcBoard", "srcPort", "dstDevice", "dstBoard", "dstPort"] as const) {
-      if (!String(row[field] ?? "").trim()) {
+    const endpointFields = [
+      ["srcComponent", row.srcComponent ?? row.srcBoard ?? row.srcDevice],
+      ["srcPort", row.srcPort],
+      ["dstComponent", row.dstComponent ?? row.dstBoard ?? row.dstDevice],
+      ["dstPort", row.dstPort]
+    ] as const;
+    for (const [field, value] of endpointFields) {
+      if (!String(value ?? "").trim()) {
         issues.push({
           code: "MISSING_ENDPOINT",
           rowId: row.rowId,

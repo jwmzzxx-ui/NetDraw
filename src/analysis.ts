@@ -18,7 +18,7 @@ export function analyzeGraph(graph: CanonicalGraph): AnalysisReport {
     issues.push({
       code: "DIRECTED_CYCLE",
       severity: "warning",
-      message: `Directed cycle detected across ${component.length} port nodes.`,
+      message: `Directed cycle detected across ${component.length} component nodes.`,
       edgeIds: logicalEdges
         .filter((edge) => component.includes(edge.source) && component.includes(edge.target))
         .map((edge) => edge.id)
@@ -210,20 +210,26 @@ function analyzeRedundancyGroups(logicalEdges: GraphEdge[]): RedundancyGroupRepo
 }
 
 function findIsolatedPortIssues(graph: CanonicalGraph): AnalysisIssue[] {
-  const connectedNodeIds = new Set<string>();
+  const connectedPorts = new Set<string>();
   for (const edge of graph.edges) {
-    connectedNodeIds.add(edge.source);
-    connectedNodeIds.add(edge.target);
+    if (edge.sourcePortId) {
+      connectedPorts.add(`${edge.source}:${edge.sourcePortId}`);
+    }
+    if (edge.targetPortId) {
+      connectedPorts.add(`${edge.target}:${edge.targetPortId}`);
+    }
   }
 
-  return graph.nodes
-    .filter((node) => node.type === "port" && !connectedNodeIds.has(node.id))
-    .map((node) => ({
+  return graph.nodes.flatMap((node) =>
+    (node.ports ?? [])
+      .filter((port) => !connectedPorts.has(`${node.id}:${port.portId}`))
+      .map((port) => ({
       code: "ISOLATED_PORT" as const,
       severity: "info" as const,
       nodeId: node.id,
-      message: `Port node ${node.id} is not connected to any edge.`
-    }));
+      message: `Port ${port.portId} on component ${node.id} is not connected to any edge.`
+    }))
+  );
 }
 
 function findUndefinedRouteNodeIssues(graph: CanonicalGraph): AnalysisIssue[] {

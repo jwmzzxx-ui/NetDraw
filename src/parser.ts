@@ -10,11 +10,9 @@ type InterfaceInputField = Exclude<keyof InterfaceRow, "rawRecord">;
 
 const fieldAliases: Record<InterfaceInputField, string[]> = {
   rowId: ["row_id", "rowid", "rowId", "id"],
-  srcDevice: ["src_device", "source_device", "srcDevice", "sourceDevice"],
-  srcBoard: ["src_board", "source_board", "srcBoard", "sourceBoard", "src_part", "source_part"],
+  srcComponent: ["src_component", "source_component", "srcComponent", "sourceComponent"],
   srcPort: ["src_port", "source_port", "srcPort", "sourcePort"],
-  dstDevice: ["dst_device", "target_device", "dstDevice", "targetDevice", "destination_device"],
-  dstBoard: ["dst_board", "target_board", "dstBoard", "targetBoard", "destination_board"],
+  dstComponent: ["dst_component", "target_component", "dstComponent", "targetComponent", "destination_component"],
   dstPort: ["dst_port", "target_port", "dstPort", "targetPort", "destination_port"],
   netType: ["net_type", "network_type", "netType", "networkType"],
   medium: ["medium", "cable_medium"],
@@ -23,16 +21,18 @@ const fieldAliases: Record<InterfaceInputField, string[]> = {
   routeHint: ["route_hint", "routeHint", "route", "route_string"],
   redundancyGroup: ["redundancy_group", "redundancyGroup", "redundancy"],
   direction: ["direction", "flow_direction"],
-  remarks: ["remarks", "remark", "notes", "comment"]
+  remarks: ["remarks", "remark", "notes", "comment"],
+  srcDevice: ["src_device", "source_device", "srcDevice", "sourceDevice"],
+  srcBoard: ["src_board", "source_board", "srcBoard", "sourceBoard", "src_part", "source_part"],
+  dstDevice: ["dst_device", "target_device", "dstDevice", "targetDevice", "destination_device"],
+  dstBoard: ["dst_board", "target_board", "dstBoard", "targetBoard", "destination_board"]
 };
 
 const interfaceRowSchema = z.object({
   rowId: z.string().trim().min(1),
-  srcDevice: z.string().trim().min(1),
-  srcBoard: z.string().trim().min(1),
+  srcComponent: z.string().trim().optional(),
   srcPort: z.string().trim().min(1),
-  dstDevice: z.string().trim().min(1),
-  dstBoard: z.string().trim().min(1),
+  dstComponent: z.string().trim().optional(),
   dstPort: z.string().trim().min(1),
   netType: z.enum(NET_TYPES),
   medium: z.string().trim().min(1),
@@ -41,7 +41,11 @@ const interfaceRowSchema = z.object({
   routeHint: z.string().trim().optional(),
   redundancyGroup: z.string().trim().optional(),
   direction: z.string().trim().optional(),
-  remarks: z.string().trim().optional()
+  remarks: z.string().trim().optional(),
+  srcDevice: z.string().trim().optional(),
+  srcBoard: z.string().trim().optional(),
+  dstDevice: z.string().trim().optional(),
+  dstBoard: z.string().trim().optional()
 });
 
 export function parseInterfaceCsv(csv: string): InterfaceRow[] {
@@ -97,6 +101,12 @@ function normalizeRecords(records: RawRecord[]): InterfaceRow[] {
         .map((issue) => `${String(issue.path[0])}: ${issue.message}`)
         .join("; ");
       throw new Error(`Invalid interface row ${index + 1}: ${details}`);
+    }
+    if (!result.data.srcComponent && !result.data.srcBoard && !result.data.srcDevice) {
+      throw new Error(`Invalid interface row ${index + 1}: srcComponent: Required`);
+    }
+    if (!result.data.dstComponent && !result.data.dstBoard && !result.data.dstDevice) {
+      throw new Error(`Invalid interface row ${index + 1}: dstComponent: Required`);
     }
 
     return {

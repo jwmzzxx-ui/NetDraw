@@ -13,7 +13,7 @@ describe("analyzeGraph", () => {
     const report = analyzeGraph(graph);
 
     expect(report.stronglyConnectedComponents).toEqual([
-      expect.arrayContaining(["port:A/BOARD/P1", "port:B/BOARD/P2"])
+      expect.arrayContaining(["component:A_BOARD", "component:B_BOARD"])
     ]);
     expect(report.issues).toEqual(
       expect.arrayContaining([
@@ -35,12 +35,12 @@ describe("analyzeGraph", () => {
 
     expect(report.parallelEdgeGroups).toEqual([
       {
-        source: "port:A/BOARD/P1",
-        target: "port:B/BOARD/P2",
+        source: "component:A_BOARD",
+        target: "component:B_BOARD",
         edgeIds: ["cable:C-001", "cable:C-002"]
       }
     ]);
-    expect(report.visualSuggestions.summaryEdgeIds).toEqual(["summary:port:A/BOARD/P1->port:B/BOARD/P2"]);
+    expect(report.visualSuggestions.summaryEdgeIds).toEqual(["summary:component:A_BOARD->component:B_BOARD"]);
   });
 
   test("checks redundancy groups for single-member and mixed-net groups", () => {
@@ -67,7 +67,7 @@ describe("analyzeGraph", () => {
   test("reports isolated ports and undefined route nodes", () => {
     const graph: CanonicalGraph = {
       nodes: [
-        { id: "port:ORPHAN/BOARD/P1", type: "port", displayName: "P1" },
+        { id: "component:ORPHAN_BOARD", type: "component", displayName: "ORPHAN/BOARD", ports: [{ portId: "P1" }] },
         { id: "route:KNOWN", type: "route-node", displayName: "KNOWN" }
       ],
       edges: [
@@ -88,7 +88,7 @@ describe("analyzeGraph", () => {
 
     expect(report.issues).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: "ISOLATED_PORT", severity: "info", nodeId: "port:ORPHAN/BOARD/P1" }),
+        expect.objectContaining({ code: "ISOLATED_PORT", severity: "info", nodeId: "component:ORPHAN_BOARD" }),
         expect.objectContaining({ code: "UNDEFINED_ROUTE_NODE", severity: "error", nodeId: "route:MISSING" })
       ])
     );
@@ -107,7 +107,7 @@ describe("renderAnalysisMarkdown", () => {
     expect(markdown).toContain("# NetDraw Analysis Report");
     expect(markdown).toContain("## Issues");
     expect(markdown).toContain("## Visual Suggestions");
-    expect(markdown).toContain("summary:port:A/BOARD/P1->port:B/BOARD/P2");
+    expect(markdown).toContain("summary:component:A_BOARD->component:B_BOARD");
   });
 });
 
